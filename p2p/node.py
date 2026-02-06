@@ -6,7 +6,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from flask import Flask, request, jsonify
-from core.mpa_blockchain import Blockchain
+from mpa_core.mpa_blockchain import Blockchain
 
 app = Flask(__name__)
 bc = Blockchain()

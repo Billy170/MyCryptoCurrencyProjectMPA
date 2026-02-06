@@ -6,7 +6,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from tkinter import *
-from core.mpa_crypto import create_wallet, sign_transaction
+from mpa_core.mpa_crypto import create_wallet, sign_transaction
 
 sk, vk = create_wallet()
 

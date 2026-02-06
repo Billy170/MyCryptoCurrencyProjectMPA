@@ -6,7 +6,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from fastapi import FastAPI
-from core.mpa_blockchain import Blockchain
+from mpa_core.mpa_blockchain import Blockchain
 
 app = FastAPI()
 bc = Blockchain()

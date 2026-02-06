@@ -7,7 +7,7 @@ if PROJECT_ROOT not in sys.path:
 
 from flask import Flask
 
-from core.mpa_blockchain import Blockchain
+from mpa_core.mpa_blockchain import Blockchain
 from pool.mpa_pool_server import balances, miners
 
 app = Flask(__name__)

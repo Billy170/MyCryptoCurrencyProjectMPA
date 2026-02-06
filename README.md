@@ -15,4 +15,4 @@ MPA Altcoin Project
 2. Install project dependencies:
    - `python -m pip install -e .`
 
-Using editable install (`-e .`) ensures imports like `from core import Blockchain` resolve from this project instead of PyCharm trying to install an unrelated `core` package from PyPI.
+Using editable install (`-e .`) ensures imports like `from mpa_core import Blockchain` resolve from this project instead of PyCharm trying to install an unrelated package from PyPI.

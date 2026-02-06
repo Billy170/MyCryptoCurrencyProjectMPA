@@ -3,7 +3,7 @@ import time
 try:
     from .mpa_crypto import verify_transaction
 except ImportError:
-    # Allow running this module directly from within the `core` directory.
+    # Allow running this module directly from within the `mpa_core` directory.
     from mpa_crypto import verify_transaction
 
 class Blockchain:

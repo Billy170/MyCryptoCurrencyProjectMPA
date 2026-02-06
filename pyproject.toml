@@ -19,4 +19,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["core", "p2p", "wallet", "miner", "explorer", "pool", "admin", "launcher"]
+packages = ["mpa_core", "p2p", "wallet", "miner", "explorer", "pool", "admin", "launcher"]
