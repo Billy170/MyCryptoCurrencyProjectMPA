@@ -10,7 +10,7 @@ if PROJECT_ROOT not in sys.path:
 
 from core.mpa_blockchain import Blockchain
 
-HOST = '0.0.0.0'
+HOST = "0.0.0.0"
 PORT = 3333
 bc = Blockchain()
 miners = {}
@@ -37,7 +37,14 @@ def handle_client(conn, addr):
 
 def run_pool_server(host=HOST, port=PORT):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server.bind((host, port))
+    except OSError as exc:
+        print(f"Pool server not started: {host}:{port} is already in use ({exc}).")
+        server.close()
+        return False
+
     server.listen(100)
     print(f"Pool listening on {port}")
     while True:
