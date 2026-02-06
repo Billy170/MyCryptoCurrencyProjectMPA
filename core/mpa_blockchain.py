@@ -1,8 +1,8 @@
 import time
 
 try:
-    from core.mpa_crypto import verify_transaction
-except ModuleNotFoundError:
+    from .mpa_crypto import verify_transaction
+except ImportError:
     # Allow running this module directly from within the `core` directory.
     from mpa_crypto import verify_transaction
 
