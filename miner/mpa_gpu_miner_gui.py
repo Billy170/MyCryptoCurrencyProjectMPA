@@ -19,44 +19,48 @@ bc = Blockchain()
 running = False
 hashrate = 0
 shares = 0
+simulation_mode = False
 
 
-def _resolve_gpu_name():
-    """Return GPU display name or raise RuntimeError with user-safe message."""
+def _resolve_mining_device():
+    """Return (device_name, simulation_mode)."""
     info = check_gpu()
-    # gpu_check currently returns (name, cores, vram)
-    if isinstance(info, tuple):
-        if len(info) >= 1:
-            return str(info[0])
-    return str(info)
+    if isinstance(info, tuple) and len(info) >= 1:
+        return str(info[0]), False
+    return str(info), False
 
 
 def miner_loop(log):
     global running, hashrate, shares
     while running:
         time.sleep(0.2)
-        hashrate = 120 + int(time.time()) % 30
+        if simulation_mode:
+            hashrate = 8 + int(time.time()) % 5
+        else:
+            hashrate = 120 + int(time.time()) % 30
         shares += 1
-        log.insert(END, f"Mined share #{shares} | Hashrate {hashrate} MH/s\n")
+        mode = "SIM" if simulation_mode else "GPU"
+        log.insert(END, f"[{mode}] Mined share #{shares} | Hashrate {hashrate} MH/s\n")
         log.see(END)
 
 
 def start_mining(log, gpu_label):
-    global running
+    global running, simulation_mode
     try:
-        gpu_name = _resolve_gpu_name()
+        device_name, simulation_mode = _resolve_mining_device()
+        gpu_label.config(text=f"GPU: {device_name}")
     except RuntimeError as exc:
-        gpu_label.config(text="GPU: not available")
-        log.insert(END, f"Cannot start mining: {exc}\n")
+        # Fallback instead of crashing: allow CPU simulation mode.
+        simulation_mode = True
+        gpu_label.config(text="GPU: not available (CPU sim)")
+        log.insert(END, f"Warning: {exc}. Starting in CPU simulation mode.\n")
         log.see(END)
-        return
     except Exception as exc:
-        gpu_label.config(text="GPU: error")
-        log.insert(END, f"Cannot start mining: unexpected GPU check error: {exc}\n")
+        simulation_mode = True
+        gpu_label.config(text="GPU: error (CPU sim)")
+        log.insert(END, f"Warning: unexpected GPU check error: {exc}. Starting in CPU simulation mode.\n")
         log.see(END)
-        return
 
-    gpu_label.config(text=f"GPU: {gpu_name}")
     if not running:
         running = True
         threading.Thread(target=miner_loop, args=(log,), daemon=True).start()

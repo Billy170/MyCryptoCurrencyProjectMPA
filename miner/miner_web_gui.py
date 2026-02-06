@@ -23,16 +23,17 @@ state = {
     "shares": 0,
     "started_at": None,
     "error": "",
+    "simulation_mode": False,
 }
 
 _lock = threading.Lock()
 
 
-def _resolve_gpu_name():
+def _resolve_mining_device():
     info = check_gpu()
     if isinstance(info, tuple) and len(info) >= 1:
-        return str(info[0])
-    return str(info)
+        return str(info[0]), False
+    return str(info), False
 
 
 def miner_loop():
@@ -40,30 +41,29 @@ def miner_loop():
         with _lock:
             if not state["running"]:
                 break
-            state["hashrate"] = 120 + int(time.time()) % 30
+            if state["simulation_mode"]:
+                state["hashrate"] = 8 + int(time.time()) % 5
+            else:
+                state["hashrate"] = 120 + int(time.time()) % 30
             state["shares"] += 1
         time.sleep(0.5)
 
 
 def start_mining():
     try:
-        gpu_name = _resolve_gpu_name()
+        gpu_name, simulation = _resolve_mining_device()
+        error = ""
     except RuntimeError as exc:
-        with _lock:
-            state["running"] = False
-            state["error"] = str(exc)
-            state["gpu_name"] = "not available"
-        return False, "not available"
+        gpu_name, simulation = "not available (CPU sim)", True
+        error = f"{exc}. Running in CPU simulation mode."
     except Exception as exc:
-        with _lock:
-            state["running"] = False
-            state["error"] = f"Unexpected GPU check error: {exc}"
-            state["gpu_name"] = "error"
-        return False, "error"
+        gpu_name, simulation = "error (CPU sim)", True
+        error = f"Unexpected GPU check error: {exc}. Running in CPU simulation mode."
 
     with _lock:
-        state["error"] = ""
         state["gpu_name"] = gpu_name
+        state["simulation_mode"] = simulation
+        state["error"] = error
         if state["running"]:
             return True, gpu_name
         state["running"] = True
@@ -108,7 +108,8 @@ TPL = """
     <div class="panel">
       <strong>Status:</strong>
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
-      <strong>GPU:</strong> {{ gpu_name }}
+      <strong>Device:</strong> {{ gpu_name }}
+      {% if simulation_mode %}<div class="err">CPU simulation mode enabled</div>{% endif %}
       {% if error %}<div class="err">{{ error }}</div>{% endif %}
     </div>
 
