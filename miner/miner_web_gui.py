@@ -22,9 +22,17 @@ state = {
     "hashrate": 0,
     "shares": 0,
     "started_at": None,
+    "error": "",
 }
 
 _lock = threading.Lock()
+
+
+def _resolve_gpu_name():
+    info = check_gpu()
+    if isinstance(info, tuple) and len(info) >= 1:
+        return str(info[0])
+    return str(info)
 
 
 def miner_loop():
@@ -38,11 +46,24 @@ def miner_loop():
 
 
 def start_mining():
-    ok, gpu_name = check_gpu()
+    try:
+        gpu_name = _resolve_gpu_name()
+    except RuntimeError as exc:
+        with _lock:
+            state["running"] = False
+            state["error"] = str(exc)
+            state["gpu_name"] = "not available"
+        return False, "not available"
+    except Exception as exc:
+        with _lock:
+            state["running"] = False
+            state["error"] = f"Unexpected GPU check error: {exc}"
+            state["gpu_name"] = "error"
+        return False, "error"
+
     with _lock:
+        state["error"] = ""
         state["gpu_name"] = gpu_name
-        if not ok:
-            return False, gpu_name
         if state["running"]:
             return True, gpu_name
         state["running"] = True
@@ -68,6 +89,7 @@ TPL = """
     .panel { background:#111827; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
     .ok { color:#34d399; }
     .stop { color:#f87171; }
+    .err { color:#fca5a5; margin-top: 8px; }
     .row { display:flex; gap:14px; flex-wrap: wrap; }
     .metric { background:#1f2937; border-radius:10px; padding:12px; min-width: 160px; }
     .metric .k { color:#93c5fd; font-size: 13px; }
@@ -87,6 +109,7 @@ TPL = """
       <strong>Status:</strong>
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
       <strong>GPU:</strong> {{ gpu_name }}
+      {% if error %}<div class="err">{{ error }}</div>{% endif %}
     </div>
 
     <div class="row">
