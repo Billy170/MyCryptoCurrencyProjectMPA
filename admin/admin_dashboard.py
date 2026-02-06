@@ -1,5 +1,22 @@
 from flask import Flask
+
+from core.mpa_blockchain import Blockchain
+from pool.mpa_pool_server import balances, miners
+
 app = Flask(__name__)
+bc = Blockchain()
+
+
+def total_hashrate() -> int:
+    """Estimate total hashrate from active miners state."""
+    # Pool server tracks shares/difficulty only for now; expose a conservative
+    # synthetic metric for dashboard compatibility.
+    return sum(m.get("shares", 0) for m in miners.values())
+
+
+def total_shares() -> int:
+    return sum(m.get("shares", 0) for m in miners.values())
+
 
 @app.route("/admin")
 def admin():
@@ -9,7 +26,9 @@ def admin():
         "miners": list(miners),
         "balances": balances,
         "hashrate": total_hashrate(),
-        "shares": total_shares()
+        "shares": total_shares(),
     }
 
-app.run(port=9000)
+
+if __name__ == "__main__":
+    app.run(port=9000)
