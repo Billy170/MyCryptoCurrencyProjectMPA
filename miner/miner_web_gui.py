@@ -17,13 +17,18 @@ except Exception:
     try:
         from gpu_check import check_gpu
     except Exception:
+
         def check_gpu():
             raise RuntimeError("CUDA check unavailable")
 
-app = Flask(__name__)
+
+APP_PORT = int(os.environ.get("MPA_MINER_PORT", "8090"))
 POOL_HOST = os.environ.get("MPA_POOL_HOST", "127.0.0.1")
 POOL_PORT = int(os.environ.get("MPA_POOL_PORT", "3333"))
-MINER_ID = f"web-miner-{os.getpid()}"
+MINER_ID = os.environ.get("MPA_MINER_ID", f"web-miner-{os.getpid()}")
+DEFAULT_WORKERS = max(1, int(os.environ.get("MPA_MINER_WORKERS", str(os.cpu_count() or 1))))
+
+app = Flask(__name__)
 
 state = {
     "running": False,
@@ -36,6 +41,9 @@ state = {
     "error": "",
     "simulation_mode": False,
     "wallet": "MY_WALLET",
+    "workers": DEFAULT_WORKERS,
+    "miner_id": MINER_ID,
+    "port": APP_PORT,
 }
 
 _lock = threading.Lock()
@@ -48,8 +56,8 @@ def _resolve_mining_device():
     return str(info), False
 
 
-def _submit_share(wallet: str) -> bool:
-    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet}
+def _submit_share(wallet: str, hashrate: int) -> bool:
+    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate}
     with socket.create_connection((POOL_HOST, POOL_PORT), timeout=1.0) as s:
         s.send(json.dumps(msg).encode())
         resp = json.loads(s.recv(4096).decode())
@@ -63,21 +71,34 @@ def miner_loop():
                 break
             wallet = state["wallet"]
             sim = state["simulation_mode"]
-            state["hashrate"] = 8 + int(time.time()) % 5 if sim else 120 + int(time.time()) % 30
-            state["shares"] += 1
-        try:
-            ok = _submit_share(wallet)
+            workers = max(1, int(state["workers"]))
+            per_worker = (8 + int(time.time()) % 5) if sim else (120 + int(time.time()) % 30)
+            current_hashrate = per_worker * workers
+            state["hashrate"] = current_hashrate
+
+        accepted = 0
+        rejected = 0
+        for _ in range(workers):
             with _lock:
+                if not state["running"]:
+                    break
+            try:
+                ok = _submit_share(wallet, current_hashrate)
                 if ok:
-                    state["accepted"] += 1
-                    state["error"] = ""
+                    accepted += 1
                 else:
-                    state["rejected"] += 1
-                    state["error"] = "Pool rejected share"
-        except Exception as exc:
-            with _lock:
-                state["rejected"] += 1
-                state["error"] = f"Pool connection error: {exc}"
+                    rejected += 1
+            except Exception:
+                rejected += 1
+
+        with _lock:
+            state["shares"] += accepted + rejected
+            state["accepted"] += accepted
+            state["rejected"] += rejected
+            if rejected > 0 and accepted == 0:
+                state["error"] = "Pool connection/reject errors"
+            elif accepted > 0:
+                state["error"] = ""
         time.sleep(0.5)
 
 
@@ -118,7 +139,7 @@ TPL = """
   <title>MPA Miner Web GUI</title>
   <style>
     body { font-family: Arial, sans-serif; background:#0b1020; color:#e5e7eb; margin:0; }
-    .container { max-width: 760px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 860px; margin: 0 auto; padding: 20px; }
     .panel { background:#111827; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
     .ok { color:#34d399; }
     .stop { color:#f87171; }
@@ -149,8 +170,17 @@ TPL = """
     </div>
 
     <div class="panel">
+      <form method="post" action="/set_workers">
+        <strong>Workers (CPU/GPU threads):</strong>
+        <input name="workers" value="{{ workers }}" />
+        <button class="save" type="submit">Save workers</button>
+      </form>
+    </div>
+
+    <div class="panel">
       <strong>Status:</strong>
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
+      <strong>Miner ID:</strong> {{ miner_id }}<br/>
       <strong>Device:</strong> {{ gpu_name }}<br/>
       <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}
       {% if simulation_mode %}<div class="err">CPU simulation mode enabled</div>{% endif %}
@@ -159,6 +189,7 @@ TPL = """
 
     <div class="row">
       <div class="metric"><div class="k">Hashrate</div><div class="v">{{ hashrate }} MH/s</div></div>
+      <div class="metric"><div class="k">Workers</div><div class="v">{{ workers }}</div></div>
       <div class="metric"><div class="k">Shares</div><div class="v">{{ shares }}</div></div>
       <div class="metric"><div class="k">Accepted</div><div class="v">{{ accepted }}</div></div>
       <div class="metric"><div class="k">Rejected</div><div class="v">{{ rejected }}</div></div>
@@ -198,6 +229,18 @@ def set_wallet():
     return redirect(url_for("home"))
 
 
+@app.post("/set_workers")
+def set_workers():
+    workers_raw = request.form.get("workers", "").strip()
+    try:
+        workers = max(1, int(workers_raw))
+    except ValueError:
+        workers = state["workers"]
+    with _lock:
+        state["workers"] = workers
+    return redirect(url_for("home"))
+
+
 @app.post("/start")
 def start():
     start_mining()
@@ -217,4 +260,4 @@ def api_miner():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8090)
+    app.run(host="0.0.0.0", port=APP_PORT)

@@ -87,6 +87,7 @@ def pool_stats_api():
             "miners": miners_copy,
             "balances": wallet_copy,
             "total_shares": sum(v.get("shares", 0) for v in miners_copy.values()),
+            "total_hashrate": sum(int(v.get("hashrate", 0)) for v in miners_copy.values()),
             "total_balance": sum(wallet_copy.values()),
             "chain_height": len(bc.chain),
             "status": "ok",
@@ -158,12 +159,13 @@ def run_pool_api(host=API_HOST, port=API_PORT):
     api_app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
-def _apply_submit(miner_id: str, wallet: str):
+def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
     with state_lock:
         if miner_id not in miners:
-            miners[miner_id] = {"shares": 0, "difficulty": 1, "wallet": wallet}
+            miners[miner_id] = {"shares": 0, "difficulty": 1, "wallet": wallet, "hashrate": 0}
         miners[miner_id]["shares"] += 1
         miners[miner_id]["wallet"] = wallet
+        miners[miner_id]["hashrate"] = int(hashrate)
 
         _append_chain_tx(
             {
@@ -190,7 +192,8 @@ def handle_client(conn, addr):
             if msg.get("method") == "submit":
                 miner_id = str(msg.get("miner_id") or default_miner_id)
                 wallet = str(msg.get("wallet") or "UNKNOWN_WALLET")
-                _apply_submit(miner_id, wallet)
+                hashrate = int(msg.get("hashrate", 0) or 0)
+                _apply_submit(miner_id, wallet, hashrate)
                 conn.send(json.dumps({"result": "accepted", "wallet": wallet}).encode())
             else:
                 conn.send(json.dumps({"result": "ignored"}).encode())

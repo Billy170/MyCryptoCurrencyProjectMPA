@@ -29,6 +29,7 @@ def fetch_pool_stats():
             "total_balance": 0,
             "status": "offline",
             "online": False,
+            "total_hashrate": 0,
             "api_url": POOL_API_URL,
             "error": str(exc),
         }
@@ -72,6 +73,7 @@ tpl = """
 
     <div class="cards">
       <div class="card"><div class="title">Active miners</div><div class="value">{{ miners|length }}</div></div>
+      <div class="card"><div class="title">Total hashrate</div><div class="value">{{ total_hashrate }} MH/s</div></div>
       <div class="card"><div class="title">Total shares</div><div class="value">{{ total_shares }}</div></div>
       <div class="card"><div class="title">Total pending payout</div><div class="value">{{ '%.4f'|format(total_balance) }} MPA</div></div>
     </div>
