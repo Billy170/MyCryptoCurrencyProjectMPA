@@ -188,8 +188,11 @@ def run_pool_api(host=API_HOST, port=API_PORT):
 
 def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
     with state_lock:
-        if miner_id not in miners:
-            miners[miner_id] = {"shares": 0, "difficulty": 1, "wallet": wallet, "hashrate": 0}
+        is_new_miner = miner_id not in miners
+        if is_new_miner:
+            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0}
+            for m in miners.values():
+                m["difficulty"] = round(float(m.get("difficulty", 1.0)) + 0.05, 2)
         miners[miner_id]["shares"] += 1
         miners[miner_id]["wallet"] = wallet
         miners[miner_id]["hashrate"] = int(hashrate)

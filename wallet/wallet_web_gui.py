@@ -36,6 +36,15 @@ def get_wallet_balance(address: str) -> float:
         return 0.0
 
 
+def get_chain_height() -> int:
+    try:
+        with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
+            data = json.loads(resp.read().decode())
+        return int(data.get("chain_height", 0))
+    except Exception:
+        return 0
+
+
 def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_value: str):
     sender_value = sender_value.strip()
     receiver_value = receiver_value.strip()
@@ -126,6 +135,7 @@ WALLET_TPL = """
       <div><strong>Email:</strong> {{ email }}</div>
       <div><strong>Wallet address:</strong> {{ wallet_address }}</div>
       <div class="ok"><strong>Balance:</strong> {{ '%.4f'|format(balance) }} MPA</div>
+      <div><strong>Blocks mined on network:</strong> {{ chain_height }}</div>
       <div style="font-size:12px;color:#93a4bf;">Auto-refresh every 2 seconds</div>
     </div>
 
@@ -174,6 +184,7 @@ def render_wallet(**kwargs):
         "email": _session_email(),
         "wallet_address": wallet,
         "balance": get_wallet_balance(wallet),
+        "chain_height": get_chain_height(),
         "sender": wallet,
         "receiver": "",
         "amount": "",
