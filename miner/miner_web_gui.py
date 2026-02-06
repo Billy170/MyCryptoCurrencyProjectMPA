@@ -4,6 +4,7 @@ import socket
 import sys
 import threading
 import time
+from urllib.request import urlopen
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -27,6 +28,11 @@ POOL_HOST = os.environ.get("MPA_POOL_HOST", "127.0.0.1")
 POOL_PORT = int(os.environ.get("MPA_POOL_PORT", "3333"))
 MINER_ID = os.environ.get("MPA_MINER_ID", f"web-miner-{os.getpid()}")
 DEFAULT_WORKERS = max(1, int(os.environ.get("MPA_MINER_WORKERS", str(os.cpu_count() or 1))))
+POOL_API = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
+
+STATE_DIR = os.path.join(PROJECT_ROOT, ".mpa_state")
+os.makedirs(STATE_DIR, exist_ok=True)
+MINER_STATE_FILE = os.path.join(STATE_DIR, f"miner_{MINER_ID.replace(':', '_')}.json")
 
 app = Flask(__name__)
 
@@ -44,9 +50,72 @@ state = {
     "workers": DEFAULT_WORKERS,
     "miner_id": MINER_ID,
     "port": APP_PORT,
+    "last_seen_block": 0,
+    "start_block": 0,
 }
 
 _lock = threading.Lock()
+
+
+def _load_miner_state() -> dict:
+    try:
+        with open(MINER_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_miner_state():
+    with _lock:
+        snapshot = {
+            "wallet": state.get("wallet", ""),
+            "workers": int(state.get("workers", 1)),
+            "last_seen_block": int(state.get("last_seen_block", 0)),
+        }
+    try:
+        with open(MINER_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f)
+    except Exception:
+        pass
+
+
+def _fetch_chain_height() -> int:
+    with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
+        data = json.loads(resp.read().decode())
+    return int(data.get("chain_height", 0) or 0)
+
+
+def _sync_chain_height():
+    try:
+        h = _fetch_chain_height()
+    except Exception:
+        return
+    with _lock:
+        if h >= int(state.get("last_seen_block", 0)):
+            state["last_seen_block"] = h
+    _save_miner_state()
+
+
+def _bootstrap_saved_state():
+    saved = _load_miner_state()
+    with _lock:
+        wallet = str(saved.get("wallet", "")).strip()
+        if wallet:
+            state["wallet"] = wallet
+        try:
+            workers = saved.get("workers")
+            if workers is not None:
+                state["workers"] = max(1, int(workers))
+        except Exception:
+            pass
+        try:
+            state["last_seen_block"] = max(0, int(saved.get("last_seen_block", 0)))
+        except Exception:
+            state["last_seen_block"] = 0
+        state["start_block"] = state["last_seen_block"]
 
 
 def _resolve_mining_device():
@@ -99,6 +168,7 @@ def miner_loop():
                 state["error"] = "Pool connection/reject errors"
             elif accepted > 0:
                 state["error"] = ""
+        _sync_chain_height()
         time.sleep(0.5)
 
 
@@ -122,6 +192,8 @@ def start_mining():
             return True, gpu_name
         state["running"] = True
         state["started_at"] = time.time()
+        state["start_block"] = int(state.get("last_seen_block", 0))
+    _save_miner_state()
     threading.Thread(target=miner_loop, daemon=True).start()
     return True, gpu_name
 
@@ -182,7 +254,9 @@ TPL = """
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
       <strong>Miner ID:</strong> {{ miner_id }}<br/>
       <strong>Device:</strong> {{ gpu_name }}<br/>
-      <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}
+      <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
+      <strong>Start from block:</strong> {{ start_block }}<br/>
+      <strong>Last saved block:</strong> {{ last_seen_block }}
       {% if simulation_mode %}<div class="err">CPU simulation mode enabled</div>{% endif %}
       {% if error %}<div class="err">{{ error }}</div>{% endif %}
     </div>
@@ -226,6 +300,7 @@ def set_wallet():
     wallet = request.form.get("wallet", "").strip()
     with _lock:
         state["wallet"] = wallet or state["wallet"]
+    _save_miner_state()
     return redirect(url_for("home"))
 
 
@@ -238,6 +313,7 @@ def set_workers():
         workers = state["workers"]
     with _lock:
         state["workers"] = workers
+    _save_miner_state()
     return redirect(url_for("home"))
 
 
@@ -258,6 +334,8 @@ def api_miner():
     with _lock:
         return jsonify(dict(state))
 
+
+_bootstrap_saved_state()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=APP_PORT)

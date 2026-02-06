@@ -15,6 +15,10 @@ app.secret_key = os.environ.get("MPA_WALLET_SECRET", "dev-wallet-secret")
 POOL_API = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
 sk, vk = create_wallet()
 
+STATE_DIR = os.path.join(PROJECT_ROOT, ".mpa_state")
+os.makedirs(STATE_DIR, exist_ok=True)
+WALLET_STATE_FILE = os.path.join(STATE_DIR, "wallet_blocks.json")
+
 
 def _api_post(path: str, payload: dict):
     req = Request(
@@ -36,13 +40,38 @@ def get_wallet_balance(address: str) -> float:
         return 0.0
 
 
-def get_chain_height() -> int:
+def _load_wallet_blocks() -> dict:
+    try:
+        with open(WALLET_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_wallet_blocks(data: dict):
+    try:
+        with open(WALLET_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def get_chain_height(wallet_address: str) -> int:
+    cached = int(_load_wallet_blocks().get(wallet_address or "", 0) or 0)
     try:
         with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
             data = json.loads(resp.read().decode())
-        return int(data.get("chain_height", 0))
+        current = int(data.get("chain_height", 0) or 0)
+        if wallet_address:
+            blocks = _load_wallet_blocks()
+            blocks[wallet_address] = current
+            _save_wallet_blocks(blocks)
+        return current
     except Exception:
-        return 0
+        return cached
 
 
 def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_value: str):
@@ -184,7 +213,7 @@ def render_wallet(**kwargs):
         "email": _session_email(),
         "wallet_address": wallet,
         "balance": get_wallet_balance(wallet),
-        "chain_height": get_chain_height(),
+        "chain_height": get_chain_height(wallet),
         "sender": wallet,
         "receiver": "",
         "amount": "",
