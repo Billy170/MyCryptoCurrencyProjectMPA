@@ -11,7 +11,7 @@ SERVICES = [
     {"name": "pool-server", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_server.py")], "port": 3333},
     {"name": "pool-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_gui.py")], "port": 8080},
     {"name": "wallet-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "wallet", "mpa_wallet_gui.py")]},
-    {"name": "miner-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "miner", "mpa_gpu_miner_gui.py")]},
+    {"name": "miner-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")], "port": 8090},
     {"name": "explorer-rpc", "cmd": [PYTHON, os.path.join(ROOT, "..", "explorer", "explorer_rpc.py")]},
     {"name": "admin-dashboard", "cmd": [PYTHON, os.path.join(ROOT, "..", "admin", "admin_dashboard.py")], "port": 9000},
 ]
