@@ -158,9 +158,14 @@ TPL = """
         <input name="miner_count" value="{{ miner_count }}" />
         <button type="submit">Save</button>
       </form>
-      <a class="btn" href="{{ url_for('open_all') }}">Start / Refresh All</a>
+      <form method="post" action="{{ url_for('open_all') }}" style="display:inline-block;">
+        <input type="hidden" name="count" value="{{ miner_count }}" />
+        <button class="btn" type="submit">Start / Refresh All</button>
+      </form>
       <a class="btn" href="{{ url_for('workspace') }}">Open Workspace</a>
-      <a class="btn danger" href="{{ url_for('stop_all_route') }}">Stop All</a>
+      <form method="post" action="{{ url_for('stop_all_route') }}" style="display:inline-block;">
+        <button class="btn danger" type="submit">Stop All</button>
+      </form>
       <div style="margin-top:8px;">Online miners: {{ miners_online|length }} / {{ miner_count }} — Ports: {{ miners_online }}</div>
     </div>
 
@@ -237,22 +242,26 @@ def workspace():
     return home()
 
 
-@app.get("/open/all")
+@app.route("/open/all", methods=["GET", "POST"])
 def open_all():
-    raw = request.args.get("count") or request.cookies.get("miner_count", "1")
+    raw = request.values.get("count") or request.cookies.get("miner_count", "1")
     try:
         miner_count = max(1, min(16, int(raw)))
     except ValueError:
         miner_count = 1
     start_all(miner_count)
     time.sleep(1.0)
-    return redirect(url_for("workspace"))
+    resp = redirect(url_for("workspace"))
+    resp.set_cookie("miner_count", str(miner_count))
+    return resp
 
 
-@app.get("/stop/all")
+@app.route("/stop/all", methods=["GET", "POST"])
 def stop_all_route():
     stop_all()
-    return redirect(url_for("home"))
+    resp = redirect(url_for("home"))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.get("/open/<key>")
