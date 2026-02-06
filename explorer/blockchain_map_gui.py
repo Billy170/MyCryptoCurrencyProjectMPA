@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -12,6 +12,19 @@ from flask import Flask, jsonify, render_template_string, request
 app = Flask(__name__)
 POOL_API_BASE = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
 
+
+
+
+def send_sync(block_height: int):
+    payload = {"role": "explorer", "node_id": "blockchain-map", "last_block": int(max(0, block_height - 1))}
+    req = Request(
+        f"{POOL_API_BASE}/api/sync",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=1.2):
+        pass
 
 def fetch_chain():
     try:
@@ -65,7 +78,8 @@ TPL = """
   </div>
 
   <div class="panel">
-    <strong>Chain height:</strong> {{ chain_height }}
+    <strong>Chain height:</strong> {{ chain_height }}<br/>
+    <strong>Network approval:</strong> {{ "approved" if approved else "pending" }}
     {% if selected_block is not none %}
       <h3>Block details #{{ selected_block.index }}</h3>
       <pre>{{ selected_block | tojson(indent=2) }}</pre>
@@ -83,6 +97,10 @@ TPL = """
 def home():
     chain = fetch_chain()
     blocks = chain.get("blocks", [])
+    try:
+        send_sync(int(chain.get("chain_height", 0)))
+    except Exception:
+        pass
     selected_block = None
     error = chain.get("error", "")
 
@@ -102,6 +120,7 @@ def home():
         TPL,
         blocks=blocks,
         chain_height=chain.get("chain_height", 0),
+        approved=bool((chain.get("sync") or {}).get("approved", True)),
         selected_block=selected_block,
         error=error,
     )

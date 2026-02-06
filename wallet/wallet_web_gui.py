@@ -31,6 +31,19 @@ def _api_post(path: str, payload: dict):
         return json.loads(resp.read().decode()), resp.getcode()
 
 
+
+
+def _sync_network(role: str, node_id: str, last_block: int):
+    payload = {"role": role, "node_id": node_id, "last_block": int(last_block)}
+    req = Request(
+        f"{POOL_API}/api/sync",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=1.5):
+        pass
+
 def get_wallet_balance(address: str) -> float:
     try:
         with urlopen(f"{POOL_API}/api/wallet/{address}", timeout=1.2) as resp:
@@ -69,8 +82,17 @@ def get_chain_height(wallet_address: str) -> int:
             blocks = _load_wallet_blocks()
             blocks[wallet_address] = current
             _save_wallet_blocks(blocks)
+            try:
+                _sync_network("wallet", wallet_address, current)
+            except Exception:
+                pass
         return current
     except Exception:
+        if wallet_address and cached > 0:
+            try:
+                _sync_network("wallet", wallet_address, cached)
+            except Exception:
+                pass
         return cached
 
 

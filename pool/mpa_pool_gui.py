@@ -6,18 +6,35 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import json
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
 POOL_API_URL = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334/api/pool")
 
 
+
+
+def send_sync(last_block: int):
+    payload = {"role": "pool", "node_id": "pool-gui", "last_block": int(last_block)}
+    req = Request(
+        os.environ.get("MPA_POOL_API_URL_SYNC", "http://127.0.0.1:3334") + "/api/sync",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=1.2):
+        pass
+
 def fetch_pool_stats():
     try:
         with urlopen(POOL_API_URL, timeout=1.2) as resp:
             data = json.loads(resp.read().decode())
         data["online"] = True
+        try:
+            send_sync(int(data.get("chain_height", 0)) - 1)
+        except Exception:
+            pass
         data["api_url"] = POOL_API_URL
         data["error"] = ""
         return data
@@ -69,6 +86,7 @@ tpl = """
       {% else %}
         <span class="warn">Offline</span> — {{ error }}
       {% endif %}
+      <br/><strong>Network block approval:</strong> {{ (sync or {}).get("approved", True) }}
     </div>
 
     <div class="cards">

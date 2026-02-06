@@ -4,7 +4,7 @@ import socket
 import sys
 import threading
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -82,6 +82,19 @@ def _save_miner_state():
         pass
 
 
+
+
+def _post_sync(last_block: int):
+    payload = {"role": "miner", "node_id": MINER_ID, "last_block": int(last_block)}
+    req = Request(
+        f"{POOL_API}/api/sync",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=1.2):
+        pass
+
 def _fetch_chain_height() -> int:
     with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
         data = json.loads(resp.read().decode())
@@ -96,6 +109,10 @@ def _sync_chain_height():
     with _lock:
         if h >= int(state.get("last_seen_block", 0)):
             state["last_seen_block"] = h
+    try:
+        _post_sync(h)
+    except Exception:
+        pass
     _save_miner_state()
 
 
@@ -116,6 +133,11 @@ def _bootstrap_saved_state():
         except Exception:
             state["last_seen_block"] = 0
         state["start_block"] = state["last_seen_block"]
+    if int(state.get("last_seen_block", 0)) > 0:
+        try:
+            _post_sync(int(state.get("last_seen_block", 0)))
+        except Exception:
+            pass
 
 
 def _resolve_mining_device():

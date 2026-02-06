@@ -18,18 +18,104 @@ PORT = 3333
 API_HOST = "0.0.0.0"
 API_PORT = 3334
 
+STATE_DIR = os.path.join(PROJECT_ROOT, ".mpa_state")
+os.makedirs(STATE_DIR, exist_ok=True)
+CHAIN_STATE_FILE = os.path.join(STATE_DIR, "network_chain_state.json")
+
 bc = Blockchain()
 miners = {}
 wallet_balances = {}
 state_lock = threading.Lock()
+network_sync = {"latest_block": 0, "latest_hash": "", "approved": True, "acks": {"pool": {"pool"}}, "roles_seen": {"pool"}}
 
 api_app = Flask(__name__)
+
+
+def _save_chain_state():
+    payload = {
+        "chain": bc.chain,
+        "sync": {
+            "latest_block": int(network_sync.get("latest_block", 0)),
+            "latest_hash": network_sync.get("latest_hash", ""),
+            "approved": bool(network_sync.get("approved", True)),
+            "acks": {k: sorted(v) for k, v in network_sync.get("acks", {}).items()},
+            "roles_seen": sorted(network_sync.get("roles_seen", {"pool"})),
+        },
+    }
+    try:
+        with open(CHAIN_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception:
+        pass
+
+
+def _load_chain_state():
+    try:
+        with open(CHAIN_STATE_FILE, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return
+
+    saved_chain = payload.get("chain")
+    if isinstance(saved_chain, list) and saved_chain:
+        bc.chain = saved_chain
+        bc.pending_transactions = []
+
+    sync = payload.get("sync") if isinstance(payload, dict) else {}
+    if isinstance(sync, dict):
+        network_sync["latest_block"] = int(sync.get("latest_block", len(bc.chain) - 1 if bc.chain else 0) or 0)
+        network_sync["latest_hash"] = str(sync.get("latest_hash", bc.chain[-1].get("hash", "") if bc.chain else ""))
+        network_sync["approved"] = bool(sync.get("approved", True))
+        acks = sync.get("acks", {})
+        network_sync["acks"] = {str(k): set(v) for k, v in acks.items() if isinstance(v, list)}
+        roles_seen = sync.get("roles_seen", ["pool"])
+        network_sync["roles_seen"] = set(roles_seen) if isinstance(roles_seen, list) else {"pool"}
+
+    network_sync["roles_seen"].add("pool")
+    network_sync["acks"].setdefault("pool", set()).add("pool")
+
+
+def _sync_status_payload() -> dict:
+    return {
+        "latest_block": int(network_sync.get("latest_block", 0)),
+        "latest_hash": network_sync.get("latest_hash", ""),
+        "approved": bool(network_sync.get("approved", True)),
+        "acks": {k: sorted(v) for k, v in network_sync.get("acks", {}).items()},
+        "roles_seen": sorted(network_sync.get("roles_seen", {"pool"})),
+    }
+
+
+def _mark_new_block(block: dict):
+    network_sync["latest_block"] = int(block.get("index", len(bc.chain) - 1))
+    network_sync["latest_hash"] = str(block.get("hash", ""))
+    network_sync["approved"] = False
+    network_sync["acks"] = {"pool": {"pool"}}
+    network_sync["roles_seen"].add("pool")
+
+
+def _maybe_approve_latest_block():
+    required_roles = set(network_sync.get("roles_seen", {"pool"}))
+    required_roles.add("pool")
+    approved = all(network_sync.get("acks", {}).get(role) for role in required_roles)
+    network_sync["approved"] = bool(approved)
+
+
+def _apply_sync_ack(role: str, node_id: str, last_block: int):
+    role = role or "unknown"
+    node_id = node_id or f"{role}-node"
+    network_sync["roles_seen"].add(role)
+    latest = int(network_sync.get("latest_block", 0))
+    if int(last_block) in {latest, latest + 1}:
+        network_sync.setdefault("acks", {}).setdefault(role, set()).add(node_id)
+    _maybe_approve_latest_block()
 
 
 def _append_chain_tx(tx: dict):
     """Append a transaction to blockchain and mine immediately (demo chain)."""
     bc.pending_transactions.append(tx)
-    bc.mine("POOL")
+    block = bc.mine("POOL")
+    _mark_new_block(block)
+    _save_chain_state()
 
 
 def _wallet_records():
@@ -91,6 +177,7 @@ def pool_stats_api():
             "total_balance": sum(wallet_copy.values()),
             "chain_height": len(bc.chain),
             "status": "ok",
+            "sync": _sync_status_payload(),
         }
     )
 
@@ -119,7 +206,7 @@ def chain_api():
             }
             for b in bc.chain
         ]
-    return jsonify({"chain_height": len(blocks), "blocks": blocks})
+    return jsonify({"chain_height": len(blocks), "blocks": blocks, "sync": _sync_status_payload()})
 
 
 @api_app.get("/api/block/<int:index>")
@@ -128,6 +215,19 @@ def block_api(index: int):
         if index < 0 or index >= len(bc.chain):
             return jsonify({"ok": False, "error": "block not found"}), 404
         return jsonify({"ok": True, "block": bc.chain[index]})
+
+
+@api_app.post("/api/sync")
+def sync_api():
+    data = request.get_json(silent=True) or {}
+    role = str(data.get("role", "unknown")).strip().lower()
+    node_id = str(data.get("node_id", f"{role}-node")).strip()
+    last_block = int(data.get("last_block", 0) or 0)
+    with state_lock:
+        _apply_sync_ack(role, node_id, last_block)
+        _save_chain_state()
+        payload = _sync_status_payload()
+    return jsonify({"ok": True, "sync": payload})
 
 
 @api_app.post("/api/register_wallet")
@@ -250,6 +350,13 @@ def run_pool_server(host=HOST, port=PORT):
         conn, addr = server.accept()
         threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
 
+
+_load_chain_state()
+if bc.chain:
+    network_sync["latest_block"] = int(bc.chain[-1].get("index", len(bc.chain)-1))
+    network_sync["latest_hash"] = str(bc.chain[-1].get("hash", ""))
+_maybe_approve_latest_block()
+_save_chain_state()
 
 if __name__ == "__main__":
     run_pool_server()
