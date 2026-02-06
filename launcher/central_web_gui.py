@@ -12,6 +12,11 @@ PYTHON = sys.executable
 MINER_BASE_PORT = 8090
 
 SERVICES = {
+    "explorer": {
+        "name": "Blockchain Map Explorer",
+        "port": 8050,
+        "commands": [[PYTHON, os.path.join(ROOT, "..", "explorer", "blockchain_map_gui.py")]],
+    },
     "wallet": {
         "name": "Wallet Web GUI",
         "port": 8070,

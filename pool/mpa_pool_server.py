@@ -103,6 +103,33 @@ def wallet_balance_api(wallet: str):
     return jsonify({"wallet": wallet, "balance": balance, "coin": "MPA"})
 
 
+@api_app.get("/api/chain")
+def chain_api():
+    with state_lock:
+        blocks = [
+            {
+                "index": b.get("index"),
+                "hash": b.get("hash"),
+                "prev_hash": b.get("prev_hash"),
+                "timestamp": b.get("timestamp"),
+                "tx_count": len(b.get("transactions", [])),
+                "miner": b.get("miner"),
+                "nonce": b.get("nonce"),
+                "difficulty": b.get("difficulty"),
+            }
+            for b in bc.chain
+        ]
+    return jsonify({"chain_height": len(blocks), "blocks": blocks})
+
+
+@api_app.get("/api/block/<int:index>")
+def block_api(index: int):
+    with state_lock:
+        if index < 0 or index >= len(bc.chain):
+            return jsonify({"ok": False, "error": "block not found"}), 404
+        return jsonify({"ok": True, "block": bc.chain[index]})
+
+
 @api_app.post("/api/register_wallet")
 def register_wallet_api():
     data = request.get_json(silent=True) or {}
