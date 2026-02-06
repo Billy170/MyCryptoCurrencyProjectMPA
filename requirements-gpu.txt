@@ -1,0 +1,9 @@
+# Optional GPU dependencies for miner functionality.
+# Install AFTER requirements.txt.
+# Example:
+#   python -m pip install -r requirements.txt
+#   python -m pip install -r requirements-gpu.txt
+
+torch==2.2.0; python_version < "3.12"
+torch>=2.5,<3; python_version >= "3.12"
+cupy-cuda12x==13.2.0; python_version < "3.13"

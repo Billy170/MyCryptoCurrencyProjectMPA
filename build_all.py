@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
         f.write(f"""#!/bin/bash
 HERE="$(dirname "$(readlink -f "${{0}}")")"
 export PATH="$HERE/usr/bin:$PATH"
-python3 "$HERE/usr/bin/launcher/mpa_launcher.py"
+"{sys.executable}" "$HERE/usr/bin/launcher/mpa_launcher.py"
 """)
     os.chmod(apprun_path,0o755)
     # Build AppImage
