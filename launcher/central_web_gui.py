@@ -78,6 +78,12 @@ def miner_online_count(count: int) -> int:
     return sum(1 for i in range(count) if is_service_online(MINER_BASE_PORT + i))
 
 
+def start_all(miner_count: int):
+    for key in SERVICES:
+        start_service(key)
+    start_miners(miner_count)
+
+
 TPL = """
 <!doctype html>
 <html>
@@ -86,46 +92,40 @@ TPL = """
   <title>MPA Central Web GUI</title>
   <style>
     body { font-family: Arial, sans-serif; background:#0b1020; color:#e5e7eb; margin:0; }
-    .container { max-width: 980px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 6px; }
-    .muted { color:#93a4bf; margin-bottom: 18px; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
-    .card { background:#111827; border-radius:12px; padding:16px; border:1px solid #1f2937; }
-    .name { font-size: 18px; margin-bottom:8px; }
-    .ok { color:#34d399; }
-    .down { color:#fca5a5; }
-    a.btn, button.btn { display:inline-block; margin-top:10px; text-decoration:none; background:#2563eb; color:white; padding:8px 12px; border-radius:8px; border:0; cursor:pointer; }
-    input { width:100%; padding:8px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; margin-top:6px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .card { background:#111827; border-radius:12px; padding:14px; border:1px solid #1f2937; margin-bottom:14px; }
+    .ok { color:#34d399; } .down { color:#fca5a5; }
+    button, a.btn { background:#2563eb; color:#fff; border:0; border-radius:8px; padding:8px 12px; text-decoration:none; cursor:pointer; display:inline-block; margin-right:8px; }
+    input { padding:8px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; }
+    .tabs { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    iframe { width:100%; height:420px; border:1px solid #1f2937; border-radius:8px; background:#fff; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>MPA Central Web GUI</h1>
-    <div class="muted">Άνοιγμα υπηρεσιών: wallet, miner, pool</div>
-
-    <div class="card" style="margin-bottom:14px;">
-      <div class="name">Miner instances</div>
-      <form method="post" action="/set_miner_count">
-        <label>Πόσους miner θες να τρέχεις;</label>
+    <h1>MPA One-Tab Control Center</h1>
+    <div class="card">
+      <form method="post" action="/set_miner_count" style="display:inline-block; margin-right:10px;">
+        <label>Miner instances:</label>
         <input name="miner_count" value="{{ miner_count }}" />
-        <button class="btn" type="submit">Save miner count</button>
+        <button type="submit">Save</button>
       </form>
-      <div class="muted">Online miners: {{ miners_online }} / {{ miner_count }}</div>
-      <a class="btn" href="{{ url_for('open_service', key='miner', count=miner_count) }}">Open Miner(s)</a>
+      <a class="btn" href="{{ url_for('open_all') }}">Start / Refresh All In One Tab</a>
+      <a class="btn" href="{{ url_for('workspace') }}">Open One-Tab Workspace</a>
+      <div style="margin-top:8px;">Online miners: {{ miners_online }} / {{ miner_count }}</div>
     </div>
 
-    <div class="grid">
+    <div class="card">
       {% for s in services %}
-      <div class="card">
-        <div class="name">{{ s.name }}</div>
-        {% if s.online %}
-          <div class="ok">● Online</div>
-        {% else %}
-          <div class="down">● Offline (port {{ s.port }})</div>
-        {% endif %}
-        <a class="btn" href="{{ url_for('open_service', key=s.key) }}">Open</a>
-      </div>
+        <div><strong>{{ s.name }}</strong> — {% if s.online %}<span class="ok">Online</span>{% else %}<span class="down">Offline</span>{% endif %}</div>
       {% endfor %}
+    </div>
+
+    <div class="tabs">
+      <div class="card"><h3>Pool</h3><iframe src="http://{{ host }}:8080/"></iframe></div>
+      <div class="card"><h3>Wallet</h3><iframe src="http://{{ host }}:8070/"></iframe></div>
+      <div class="card"><h3>Miner #1</h3><iframe src="http://{{ host }}:8090/"></iframe></div>
+      <div class="card"><h3>Explorer</h3><iframe src="http://{{ host }}:8050/"></iframe></div>
     </div>
   </div>
 </body>
@@ -143,11 +143,13 @@ def home():
     services = []
     for key, s in SERVICES.items():
         services.append({"key": key, **s, "online": is_service_online(s["port"])})
+    host = request.host.split(":")[0]
     return render_template_string(
         TPL,
         services=services,
         miner_count=miner_count,
         miners_online=miner_online_count(miner_count),
+        host=host,
     )
 
 
@@ -161,6 +163,22 @@ def set_miner_count():
     resp = redirect(url_for("home"))
     resp.set_cookie("miner_count", str(count))
     return resp
+
+
+@app.get("/workspace")
+def workspace():
+    return home()
+
+
+@app.get("/open/all")
+def open_all():
+    try:
+        miner_count = max(1, min(16, int(request.cookies.get("miner_count", "1"))))
+    except ValueError:
+        miner_count = 1
+    start_all(miner_count)
+    time.sleep(1.0)
+    return redirect(url_for("workspace"))
 
 
 @app.get("/open/<key>")

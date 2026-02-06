@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 import os
 import socket
 import sys
@@ -12,23 +13,12 @@ if PROJECT_ROOT not in sys.path:
 
 from flask import Flask, jsonify, redirect, render_template_string, request, url_for
 
-try:
-    from miner.gpu_check import check_gpu
-except Exception:
-    try:
-        from gpu_check import check_gpu
-    except Exception:
-
-        def check_gpu():
-            raise RuntimeError("CUDA check unavailable")
-
-
 APP_PORT = int(os.environ.get("MPA_MINER_PORT", "8090"))
 POOL_HOST = os.environ.get("MPA_POOL_HOST", "127.0.0.1")
 POOL_PORT = int(os.environ.get("MPA_POOL_PORT", "3333"))
 MINER_ID = os.environ.get("MPA_MINER_ID", f"web-miner-{os.getpid()}")
-DEFAULT_WORKERS = max(1, int(os.environ.get("MPA_MINER_WORKERS", str(os.cpu_count() or 1))))
 POOL_API = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
+CPU_TARGET_PERCENT = 95
 
 STATE_DIR = os.path.join(PROJECT_ROOT, ".mpa_state")
 os.makedirs(STATE_DIR, exist_ok=True)
@@ -38,23 +28,70 @@ app = Flask(__name__)
 
 state = {
     "running": False,
-    "gpu_name": "unknown",
+    "mode": "CPU_ONLY",
     "hashrate": 0,
     "shares": 0,
     "accepted": 0,
     "rejected": 0,
     "started_at": None,
     "error": "",
-    "simulation_mode": False,
     "wallet": "MY_WALLET",
-    "workers": DEFAULT_WORKERS,
+    "workers": 1,
     "miner_id": MINER_ID,
     "port": APP_PORT,
     "last_seen_block": 0,
     "start_block": 0,
+    "cpu_target": CPU_TARGET_PERCENT,
 }
 
 _lock = threading.Lock()
+_cpu_processes = []
+_cpu_stop_event = None
+
+
+def _cpu_mine_worker(stop_event):
+    data = os.urandom(32)
+    duty_cycle = 0.95
+    window = 0.2
+    while not stop_event.is_set():
+        start = time.time()
+        while not stop_event.is_set() and (time.time() - start) < (window * duty_cycle):
+            data = __import__("hashlib").sha256(data).digest()
+        remaining = (window * (1 - duty_cycle))
+        if remaining > 0:
+            time.sleep(remaining)
+
+
+def _calc_cpu_workers() -> int:
+    cpu_total = max(1, os.cpu_count() or 1)
+    return max(1, int(cpu_total * (CPU_TARGET_PERCENT / 100.0)))
+
+
+def _start_cpu_workers():
+    global _cpu_processes, _cpu_stop_event
+    if _cpu_processes:
+        return
+    workers = _calc_cpu_workers()
+    _cpu_stop_event = multiprocessing.Event()
+    _cpu_processes = []
+    for _ in range(workers):
+        p = multiprocessing.Process(target=_cpu_mine_worker, args=(_cpu_stop_event,), daemon=True)
+        p.start()
+        _cpu_processes.append(p)
+    with _lock:
+        state["workers"] = workers
+
+
+def _stop_cpu_workers():
+    global _cpu_processes, _cpu_stop_event
+    if _cpu_stop_event is not None:
+        _cpu_stop_event.set()
+    for p in _cpu_processes:
+        p.join(timeout=0.5)
+        if p.is_alive():
+            p.terminate()
+    _cpu_processes = []
+    _cpu_stop_event = None
 
 
 def _load_miner_state() -> dict:
@@ -82,8 +119,6 @@ def _save_miner_state():
         pass
 
 
-
-
 def _post_sync(last_block: int):
     payload = {"role": "miner", "node_id": MINER_ID, "last_block": int(last_block)}
     req = Request(
@@ -94,6 +129,7 @@ def _post_sync(last_block: int):
     )
     with urlopen(req, timeout=1.2):
         pass
+
 
 def _fetch_chain_height() -> int:
     with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
@@ -123,12 +159,6 @@ def _bootstrap_saved_state():
         if wallet:
             state["wallet"] = wallet
         try:
-            workers = saved.get("workers")
-            if workers is not None:
-                state["workers"] = max(1, int(workers))
-        except Exception:
-            pass
-        try:
             state["last_seen_block"] = max(0, int(saved.get("last_seen_block", 0)))
         except Exception:
             state["last_seen_block"] = 0
@@ -138,13 +168,6 @@ def _bootstrap_saved_state():
             _post_sync(int(state.get("last_seen_block", 0)))
         except Exception:
             pass
-
-
-def _resolve_mining_device():
-    info = check_gpu()
-    if isinstance(info, tuple) and len(info) >= 1:
-        return str(info[0]), False
-    return str(info), False
 
 
 def _submit_share(wallet: str, hashrate: int) -> bool:
@@ -161,10 +184,8 @@ def miner_loop():
             if not state["running"]:
                 break
             wallet = state["wallet"]
-            sim = state["simulation_mode"]
             workers = max(1, int(state["workers"]))
-            per_worker = (8 + int(time.time()) % 5) if sim else (120 + int(time.time()) % 30)
-            current_hashrate = per_worker * workers
+            current_hashrate = workers * 100
             state["hashrate"] = current_hashrate
 
         accepted = 0
@@ -195,34 +216,24 @@ def miner_loop():
 
 
 def start_mining():
-    try:
-        gpu_name, simulation = _resolve_mining_device()
-        error = ""
-    except RuntimeError as exc:
-        gpu_name, simulation = "not available (CPU sim)", True
-        error = f"{exc}. Running in CPU simulation mode."
-    except Exception as exc:
-        gpu_name, simulation = "error (CPU sim)", True
-        error = f"Unexpected GPU check error: {exc}. Running in CPU simulation mode."
-
     with _lock:
-        state["gpu_name"] = gpu_name
-        state["simulation_mode"] = simulation
-        if error:
-            state["error"] = error
         if state["running"]:
-            return True, gpu_name
+            return True, "CPU"
         state["running"] = True
         state["started_at"] = time.time()
         state["start_block"] = int(state.get("last_seen_block", 0))
+        state["mode"] = "CPU_ONLY"
+
+    _start_cpu_workers()
     _save_miner_state()
     threading.Thread(target=miner_loop, daemon=True).start()
-    return True, gpu_name
+    return True, "CPU"
 
 
 def stop_mining():
     with _lock:
         state["running"] = False
+    _stop_cpu_workers()
 
 
 TPL = """
@@ -252,7 +263,7 @@ TPL = """
 </head>
 <body>
   <div class="container">
-    <h1>MPA Miner Web GUI</h1>
+    <h1>MPA Miner Web GUI (CPU ONLY)</h1>
     <p><a href="/api/miner">JSON API</a></p>
 
     <div class="panel">
@@ -264,28 +275,19 @@ TPL = """
     </div>
 
     <div class="panel">
-      <form method="post" action="/set_workers">
-        <strong>Workers (CPU/GPU threads):</strong>
-        <input name="workers" value="{{ workers }}" />
-        <button class="save" type="submit">Save workers</button>
-      </form>
-    </div>
-
-    <div class="panel">
       <strong>Status:</strong>
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
       <strong>Miner ID:</strong> {{ miner_id }}<br/>
-      <strong>Device:</strong> {{ gpu_name }}<br/>
+      <strong>Mode:</strong> {{ mode }} (Target CPU: {{ cpu_target }}%)<br/>
       <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
       <strong>Start from block:</strong> {{ start_block }}<br/>
       <strong>Last saved block:</strong> {{ last_seen_block }}
-      {% if simulation_mode %}<div class="err">CPU simulation mode enabled</div>{% endif %}
       {% if error %}<div class="err">{{ error }}</div>{% endif %}
     </div>
 
     <div class="row">
       <div class="metric"><div class="k">Hashrate</div><div class="v">{{ hashrate }} MH/s</div></div>
-      <div class="metric"><div class="k">Workers</div><div class="v">{{ workers }}</div></div>
+      <div class="metric"><div class="k">CPU Workers</div><div class="v">{{ workers }}</div></div>
       <div class="metric"><div class="k">Shares</div><div class="v">{{ shares }}</div></div>
       <div class="metric"><div class="k">Accepted</div><div class="v">{{ accepted }}</div></div>
       <div class="metric"><div class="k">Rejected</div><div class="v">{{ rejected }}</div></div>
@@ -322,19 +324,6 @@ def set_wallet():
     wallet = request.form.get("wallet", "").strip()
     with _lock:
         state["wallet"] = wallet or state["wallet"]
-    _save_miner_state()
-    return redirect(url_for("home"))
-
-
-@app.post("/set_workers")
-def set_workers():
-    workers_raw = request.form.get("workers", "").strip()
-    try:
-        workers = max(1, int(workers_raw))
-    except ValueError:
-        workers = state["workers"]
-    with _lock:
-        state["workers"] = workers
     _save_miner_state()
     return redirect(url_for("home"))
 
