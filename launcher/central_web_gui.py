@@ -206,8 +206,10 @@ def home():
         services.append({"key": key, **s, "online": is_service_online(s["port"])})
 
     host = request.host.split(":")[0]
-    miner_ports = [MINER_BASE_PORT + i for i in range(max(1, min(16, miner_count)))]
-    online_miners = miner_online_ports(miner_count)
+    configured_ports = [MINER_BASE_PORT + i for i in range(max(1, min(16, miner_count)))]
+    discovered_online = [MINER_BASE_PORT + i for i in range(16) if is_service_online(MINER_BASE_PORT + i)]
+    miner_ports = sorted(set(configured_ports + discovered_online))
+    online_miners = discovered_online
     return render_template_string(
         TPL,
         services=services,
@@ -237,8 +239,9 @@ def workspace():
 
 @app.get("/open/all")
 def open_all():
+    raw = request.args.get("count") or request.cookies.get("miner_count", "1")
     try:
-        miner_count = max(1, min(16, int(request.cookies.get("miner_count", "1"))))
+        miner_count = max(1, min(16, int(raw)))
     except ValueError:
         miner_count = 1
     start_all(miner_count)
