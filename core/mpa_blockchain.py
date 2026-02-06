@@ -1,5 +1,10 @@
 import time
-from mpa_crypto import verify_transaction
+
+try:
+    from core.mpa_crypto import verify_transaction
+except ModuleNotFoundError:
+    # Allow running this module directly from within the `core` directory.
+    from mpa_crypto import verify_transaction
 
 class Blockchain:
     def __init__(self):
