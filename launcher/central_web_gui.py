@@ -1,21 +1,67 @@
 import os
 import socket
+import subprocess
+import sys
+import time
 
-from flask import Flask, render_template_string
+from flask import Flask, redirect, render_template_string, url_for
 
 app = Flask(__name__)
+ROOT = os.path.dirname(os.path.abspath(__file__))
+PYTHON = sys.executable
 
-SERVICES = [
-    {"name": "Wallet Web GUI", "url": "http://127.0.0.1:8070", "port": 8070},
-    {"name": "Miner Web GUI", "url": "http://127.0.0.1:8090", "port": 8090},
-    {"name": "Pool Web GUI", "url": "http://127.0.0.1:8080", "port": 8080},
-]
+SERVICES = {
+    "wallet": {
+        "name": "Wallet Web GUI",
+        "url": "http://127.0.0.1:8070",
+        "port": 8070,
+        "commands": [[PYTHON, os.path.join(ROOT, "..", "wallet", "wallet_web_gui.py")]],
+    },
+    "miner": {
+        "name": "Miner Web GUI",
+        "url": "http://127.0.0.1:8090",
+        "port": 8090,
+        "commands": [[PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")]],
+    },
+    "pool": {
+        "name": "Pool Web GUI",
+        "url": "http://127.0.0.1:8080",
+        "port": 8080,
+        "commands": [
+            [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_server.py")],
+            [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_gui.py")],
+        ],
+    },
+}
+
+
+children = []
 
 
 def is_service_online(port: int, host: str = "127.0.0.1") -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.2)
         return sock.connect_ex((host, port)) == 0
+
+
+def start_service(key: str):
+    svc = SERVICES[key]
+    for cmd in svc["commands"]:
+        target_port = None
+        # start only if target port for this specific command seems down
+        cmd_text = " ".join(cmd)
+        if "wallet_web_gui.py" in cmd_text:
+            target_port = 8070
+        elif "miner_web_gui.py" in cmd_text:
+            target_port = 8090
+        elif "mpa_pool_gui.py" in cmd_text:
+            target_port = 8080
+        elif "mpa_pool_server.py" in cmd_text:
+            target_port = 3333
+
+        if target_port is not None and is_service_online(target_port):
+            continue
+        children.append(subprocess.Popen(cmd))
 
 
 TPL = """
@@ -50,7 +96,7 @@ TPL = """
         {% else %}
           <div class="down">● Offline (port {{ s.port }})</div>
         {% endif %}
-        <a class="btn" href="{{ s.url }}" target="_blank" rel="noopener">Open</a>
+        <a class="btn" href="{{ url_for('open_service', key=s.key) }}">Open</a>
       </div>
       {% endfor %}
     </div>
@@ -63,9 +109,23 @@ TPL = """
 @app.get("/")
 def home():
     services = []
-    for s in SERVICES:
-        services.append({**s, "online": is_service_online(s["port"])})
+    for key, s in SERVICES.items():
+        services.append({"key": key, **s, "online": is_service_online(s["port"])})
     return render_template_string(TPL, services=services)
+
+
+@app.get("/open/<key>")
+def open_service(key: str):
+    if key in SERVICES:
+        start_service(key)
+        # Wait a little for first boot so redirect does not fail immediately.
+        target_port = SERVICES[key]["port"]
+        for _ in range(20):
+            if is_service_online(target_port):
+                break
+            time.sleep(0.15)
+        return redirect(SERVICES[key]["url"])
+    return redirect(url_for("home"))
 
 
 if __name__ == "__main__":

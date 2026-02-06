@@ -1,7 +1,7 @@
-import os
-import sys
-import socket
 import json
+import os
+import socket
+import sys
 import threading
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,7 +18,7 @@ API_PORT = 3334
 
 bc = Blockchain()
 miners = {}
-balances = {}
+wallet_balances = {}
 state_lock = threading.Lock()
 
 api_app = Flask(__name__)
@@ -28,28 +28,41 @@ api_app = Flask(__name__)
 def pool_stats_api():
     with state_lock:
         miners_copy = {k: dict(v) for k, v in miners.items()}
-        balances_copy = dict(balances)
+        wallet_copy = dict(wallet_balances)
 
     return jsonify(
         {
             "miners": miners_copy,
-            "balances": balances_copy,
+            "balances": wallet_copy,
             "total_shares": sum(v.get("shares", 0) for v in miners_copy.values()),
-            "total_balance": sum(balances_copy.values()),
+            "total_balance": sum(wallet_copy.values()),
             "status": "ok",
         }
     )
+
+
+@api_app.get("/api/wallet/<wallet>")
+def wallet_balance_api(wallet: str):
+    with state_lock:
+        balance = float(wallet_balances.get(wallet, 0.0))
+    return jsonify({"wallet": wallet, "balance": balance, "coin": "MPA"})
 
 
 def run_pool_api(host=API_HOST, port=API_PORT):
     api_app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
-def handle_client(conn, addr):
-    miner = addr[0] + ":" + str(addr[1])
+def _apply_submit(miner_id: str, wallet: str):
     with state_lock:
-        miners[miner] = {"shares": 0, "difficulty": 1}
+        if miner_id not in miners:
+            miners[miner_id] = {"shares": 0, "difficulty": 1, "wallet": wallet}
+        miners[miner_id]["shares"] += 1
+        miners[miner_id]["wallet"] = wallet
+        wallet_balances[wallet] = wallet_balances.get(wallet, 0.0) + 0.01
 
+
+def handle_client(conn, addr):
+    default_miner_id = f"{addr[0]}:{addr[1]}"
     while True:
         try:
             data = conn.recv(4096)
@@ -57,17 +70,18 @@ def handle_client(conn, addr):
                 break
             msg = json.loads(data.decode())
             if msg.get("method") == "submit":
-                with state_lock:
-                    miners[miner]["shares"] += 1
-                    balances[miner] = balances.get(miner, 0) + 0.01
-                conn.send(json.dumps({"result": "accepted"}).encode())
+                miner_id = str(msg.get("miner_id") or default_miner_id)
+                wallet = str(msg.get("wallet") or "UNKNOWN_WALLET")
+                _apply_submit(miner_id, wallet)
+                conn.send(json.dumps({"result": "accepted", "wallet": wallet}).encode())
+            else:
+                conn.send(json.dumps({"result": "ignored"}).encode())
         except Exception:
             break
     conn.close()
 
 
 def run_pool_server(host=HOST, port=PORT):
-    # Start API for GUI/monitoring in-process so stats are real shared state.
     threading.Thread(target=run_pool_api, daemon=True).start()
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

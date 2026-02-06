@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+from urllib.request import urlopen
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -9,7 +11,18 @@ from flask import Flask, jsonify, render_template_string, request
 from mpa_core.mpa_crypto import create_wallet, sign_transaction
 
 app = Flask(__name__)
+POOL_API = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
 sk, vk = create_wallet()
+wallet_address = "MPA-" + vk.to_string().hex()[:24]
+
+
+def get_wallet_balance(address: str) -> float:
+    try:
+        with urlopen(f"{POOL_API}/api/wallet/{address}", timeout=1.2) as resp:
+            data = json.loads(resp.read().decode())
+        return float(data.get("balance", 0.0))
+    except Exception:
+        return 0.0
 
 
 def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_value: str):
@@ -50,13 +63,21 @@ TPL = """
     button { margin-top:12px; background:#2563eb; color:white; border:0; padding:10px 14px; border-radius:8px; cursor:pointer; }
     pre { white-space: pre-wrap; word-break: break-word; background:#0b1220; border-radius:8px; padding:12px; }
     .err { color:#fca5a5; }
+    .ok { color:#34d399; }
     a { color:#93c5fd; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>MPA Wallet Web GUI</h1>
-    <p><a href="/api/pubkey">Public key API</a></p>
+    <p><a href="/api/pubkey">Public key API</a> · <a href="/api/wallet">Wallet API</a></p>
+
+    <div class="panel">
+      <div><strong>Wallet address:</strong> {{ wallet_address }}</div>
+      <div class="ok"><strong>Balance:</strong> {{ '%.4f'|format(balance) }} MPA</div>
+      <div style="font-size:12px;color:#93a4bf;">Auto-refresh every 2 seconds</div>
+    </div>
+
     <div class="panel">
       <form method="post" action="/sign">
         <label>Sender</label>
@@ -76,6 +97,9 @@ TPL = """
       {% if tx_text %}<pre>{{ tx_text }}</pre>{% endif %}
     </div>
   </div>
+  <script>
+    setTimeout(() => window.location.reload(), 2000);
+  </script>
 </body>
 </html>
 """
@@ -83,7 +107,9 @@ TPL = """
 
 def render_form(**kwargs):
     defaults = {
-        "sender": "",
+        "wallet_address": wallet_address,
+        "balance": get_wallet_balance(wallet_address),
+        "sender": wallet_address,
         "receiver": "",
         "amount": "",
         "nonce": "",
@@ -128,7 +154,12 @@ def sign():
 
 @app.get("/api/pubkey")
 def pubkey_api():
-    return jsonify({"public_key": vk.to_string().hex()})
+    return jsonify({"public_key": vk.to_string().hex(), "wallet_address": wallet_address})
+
+
+@app.get("/api/wallet")
+def wallet_api():
+    return jsonify({"wallet": wallet_address, "balance": get_wallet_balance(wallet_address), "coin": "MPA"})
 
 
 if __name__ == "__main__":
