@@ -1,16 +1,17 @@
 import os
 import socket
 import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PYTHON = "python"
+PYTHON = sys.executable
 
 
 SERVICES = [
     {"name": "p2p-node", "cmd": [PYTHON, os.path.join(ROOT, "..", "p2p", "node.py")], "port": 5000},
     {"name": "pool-server", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_server.py")], "port": 3333},
     {"name": "pool-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_gui.py")], "port": 8080},
-    {"name": "wallet-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "wallet", "mpa_wallet_gui.py")]},
+    {"name": "wallet-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "wallet", "wallet_web_gui.py")], "port": 8070},
     {"name": "miner-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")], "port": 8090},
     {"name": "explorer-rpc", "cmd": [PYTHON, os.path.join(ROOT, "..", "explorer", "explorer_rpc.py")]},
     {"name": "admin-dashboard", "cmd": [PYTHON, os.path.join(ROOT, "..", "admin", "admin_dashboard.py")], "port": 9000},

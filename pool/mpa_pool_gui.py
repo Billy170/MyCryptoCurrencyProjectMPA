@@ -5,10 +5,34 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import json
+from urllib.request import urlopen
 from flask import Flask, jsonify, render_template_string
-from pool.mpa_pool_server import balances, miners
 
 app = Flask(__name__)
+POOL_API_URL = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334/api/pool")
+
+
+def fetch_pool_stats():
+    try:
+        with urlopen(POOL_API_URL, timeout=1.2) as resp:
+            data = json.loads(resp.read().decode())
+        data["online"] = True
+        data["api_url"] = POOL_API_URL
+        data["error"] = ""
+        return data
+    except Exception as exc:
+        return {
+            "miners": {},
+            "balances": {},
+            "total_shares": 0,
+            "total_balance": 0,
+            "status": "offline",
+            "online": False,
+            "api_url": POOL_API_URL,
+            "error": str(exc),
+        }
+
 
 tpl = """
 <!doctype html>
@@ -27,6 +51,8 @@ tpl = """
     th, td { padding:10px; border-bottom:1px solid #1f2937; text-align:left; }
     th { background:#1f2937; }
     .muted { color:#94a3b8; }
+    .ok { color:#34d399; }
+    .warn { color:#fca5a5; }
     a { color:#93c5fd; }
   </style>
 </head>
@@ -34,6 +60,15 @@ tpl = """
   <div class="container">
     <h1>MPA Pool Dashboard</h1>
     <p class="muted">Auto-refresh every 2s · <a href="/api/pool">JSON API</a></p>
+
+    <div class="card" style="margin-bottom:16px;">
+      <strong>Pool API:</strong> {{ api_url }}<br/>
+      {% if online %}
+        <span class="ok">Connected</span>
+      {% else %}
+        <span class="warn">Offline</span> — {{ error }}
+      {% endif %}
+    </div>
 
     <div class="cards">
       <div class="card"><div class="title">Active miners</div><div class="value">{{ miners|length }}</div></div>
@@ -68,27 +103,12 @@ tpl = """
 
 @app.route("/")
 def home():
-    total_shares = sum(v.get("shares", 0) for v in miners.values())
-    total_balance = sum(balances.values())
-    return render_template_string(
-        tpl,
-        miners=miners,
-        balances=balances,
-        total_shares=total_shares,
-        total_balance=total_balance,
-    )
+    return render_template_string(tpl, **fetch_pool_stats())
 
 
 @app.route("/api/pool")
 def pool_api():
-    return jsonify(
-        {
-            "miners": miners,
-            "balances": balances,
-            "total_shares": sum(v.get("shares", 0) for v in miners.values()),
-            "total_balance": sum(balances.values()),
-        }
-    )
+    return jsonify(fetch_pool_stats())
 
 
 if __name__ == "__main__":
