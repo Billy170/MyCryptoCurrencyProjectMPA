@@ -7,3 +7,12 @@ MPA Altcoin Project
 - Explorer + RPC
 - Admin dashboard
 - One-click launcher: python launcher/mpa_launcher.py
+
+
+## Environment setup
+1. Upgrade pip to the requested version:
+   - `python -m pip install --upgrade pip==26.0.1`
+2. Install project dependencies:
+   - `python -m pip install -e .`
+
+Using editable install (`-e .`) ensures imports like `from core import Blockchain` resolve from this project instead of PyCharm trying to install an unrelated `core` package from PyPI.
