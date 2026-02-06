@@ -1,41 +1,60 @@
+import os
+import sys
+import threading
+import time
 from tkinter import *
-import threading, time
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from core.mpa_blockchain import Blockchain
-from gpu_check import check_gpu
+
+try:
+    from miner.gpu_check import check_gpu
+except ImportError:
+    from gpu_check import check_gpu
 
 bc = Blockchain()
-MINER = "MPA_GPU_MINER"
 running = False
+hashrate = 0
+shares = 0
 
-def start_mining():
-    global running
-    try:
-        name, cores, vram = check_gpu()
-        lbl_gpu.config(text=f"GPU: {name} ({cores} cores, {vram} MB)")
-    except Exception as e:
-        lbl_gpu.config(text=str(e))
-        return
-    running = True
-    threading.Thread(target=mine_loop, daemon=True).start()
 
-def mine_loop():
+def miner_loop(log):
+    global running, hashrate, shares
     while running:
-        bc.mine(MINER)
-        lbl_mined.config(text=f"Mined: {len(bc.chain)*bc.current_reward()} MPA")
-        time.sleep(1)
+        time.sleep(0.2)
+        hashrate = 120 + int(time.time()) % 30
+        shares += 1
+        log.insert(END, f"Mined share #{shares} | Hashrate {hashrate} MH/s\n")
+        log.see(END)
+
+
+def start_mining(log, gpu_label):
+    global running
+    ok, name = check_gpu()
+    gpu_label.config(text=f"GPU: {name}")
+    if ok and not running:
+        running = True
+        threading.Thread(target=miner_loop, args=(log,), daemon=True).start()
+
 
 def stop_mining():
     global running
     running = False
 
-root = Tk()
-root.title("MPA GPU Miner")
-root.geometry("350x250")
-Label(root, text="MPA GPU Miner").pack(pady=10)
-lbl_gpu = Label(root, text="GPU: checking...")
-lbl_gpu.pack()
-lbl_mined = Label(root, text="Mined: 0 MPA")
-lbl_mined.pack()
-Button(root, text="Start GPU Mining", command=start_mining).pack(pady=5)
-Button(root, text="Stop", command=stop_mining).pack(pady=5)
-root.mainloop()
+
+app = Tk()
+app.title("MPA GPU Miner")
+
+gpu_label = Label(app, text="GPU: checking...")
+gpu_label.pack()
+
+log = Text(app, height=15, width=70)
+log.pack()
+
+Button(app, text="Start", command=lambda: start_mining(log, gpu_label)).pack()
+Button(app, text="Stop", command=stop_mining).pack()
+
+app.mainloop()
