@@ -8,6 +8,7 @@ PYTHON = sys.executable
 
 
 SERVICES = [
+    {"name": "central-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "central_web_gui.py")], "port": 8060},
     {"name": "p2p-node", "cmd": [PYTHON, os.path.join(ROOT, "..", "p2p", "node.py")], "port": 5000},
     {"name": "pool-server", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_server.py")], "port": 3333},
     {"name": "pool-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "pool", "mpa_pool_gui.py")], "port": 8080},
