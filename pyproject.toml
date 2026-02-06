@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mycrypto-project-mpa"
+version = "0.1.0"
+description = "MPA Altcoin Project"
+requires-python = ">=3.10"
+dependencies = [
+  "flask==2.3.3",
+  "fastapi==0.109.2",
+  "uvicorn==0.23.2",
+  "ecdsa==0.18.0",
+  "torch==2.2.0",
+  "cupy-cuda12x==13.2.0",
+  "requests==2.32.1",
+  "numpy==1.26.4",
+]
+
+[tool.setuptools]
+packages = ["mpa_core", "p2p", "wallet", "miner", "explorer", "pool", "admin", "launcher"]

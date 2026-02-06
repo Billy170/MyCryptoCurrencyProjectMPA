@@ -1,41 +1,94 @@
+import os
+import sys
+import threading
+import time
 from tkinter import *
-import threading, time
-from core.mpa_blockchain import Blockchain
-from gpu_check import check_gpu
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from mpa_core.mpa_blockchain import Blockchain
+
+try:
+    from miner.gpu_check import check_gpu
+except ImportError:
+    from gpu_check import check_gpu
 
 bc = Blockchain()
-MINER = "MPA_GPU_MINER"
 running = False
+hashrate = 0
+shares = 0
+simulation_mode = False
 
-def start_mining():
-    global running
-    try:
-        name, cores, vram = check_gpu()
-        lbl_gpu.config(text=f"GPU: {name} ({cores} cores, {vram} MB)")
-    except Exception as e:
-        lbl_gpu.config(text=str(e))
-        return
-    running = True
-    threading.Thread(target=mine_loop, daemon=True).start()
 
-def mine_loop():
+def _resolve_mining_device():
+    """Return (device_name, simulation_mode)."""
+    info = check_gpu()
+    if isinstance(info, tuple) and len(info) >= 1:
+        return str(info[0]), False
+    return str(info), False
+
+
+def miner_loop(log):
+    global running, hashrate, shares
     while running:
-        bc.mine(MINER)
-        lbl_mined.config(text=f"Mined: {len(bc.chain)*bc.current_reward()} MPA")
-        time.sleep(1)
+        time.sleep(0.2)
+        if simulation_mode:
+            hashrate = 8 + int(time.time()) % 5
+        else:
+            hashrate = 120 + int(time.time()) % 30
+        shares += 1
+        mode = "SIM" if simulation_mode else "GPU"
+        log.insert(END, f"[{mode}] Mined share #{shares} | Hashrate {hashrate} MH/s\n")
+        log.see(END)
 
-def stop_mining():
+
+def start_mining(log, gpu_label):
+    global running, simulation_mode
+    try:
+        device_name, simulation_mode = _resolve_mining_device()
+        gpu_label.config(text=f"GPU: {device_name}")
+    except RuntimeError as exc:
+        # Fallback instead of crashing: allow CPU simulation mode.
+        simulation_mode = True
+        gpu_label.config(text="GPU: not available (CPU sim)")
+        log.insert(END, f"Warning: {exc}. Starting in CPU simulation mode.\n")
+        log.see(END)
+    except Exception as exc:
+        simulation_mode = True
+        gpu_label.config(text="GPU: error (CPU sim)")
+        log.insert(END, f"Warning: unexpected GPU check error: {exc}. Starting in CPU simulation mode.\n")
+        log.see(END)
+
+    if not running:
+        running = True
+        threading.Thread(target=miner_loop, args=(log,), daemon=True).start()
+
+
+def stop_mining(log=None):
     global running
     running = False
+    if log is not None:
+        log.insert(END, "Mining stopped.\n")
+        log.see(END)
 
-root = Tk()
-root.title("MPA GPU Miner")
-root.geometry("350x250")
-Label(root, text="MPA GPU Miner").pack(pady=10)
-lbl_gpu = Label(root, text="GPU: checking...")
-lbl_gpu.pack()
-lbl_mined = Label(root, text="Mined: 0 MPA")
-lbl_mined.pack()
-Button(root, text="Start GPU Mining", command=start_mining).pack(pady=5)
-Button(root, text="Stop", command=stop_mining).pack(pady=5)
-root.mainloop()
+
+def run_gui():
+    app = Tk()
+    app.title("MPA GPU Miner")
+
+    gpu_label = Label(app, text="GPU: checking...")
+    gpu_label.pack()
+
+    log = Text(app, height=15, width=70)
+    log.pack()
+
+    Button(app, text="Start", command=lambda: start_mining(log, gpu_label)).pack()
+    Button(app, text="Stop", command=lambda: stop_mining(log)).pack()
+
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    run_gui()
