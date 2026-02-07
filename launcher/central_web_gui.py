@@ -1,4 +1,5 @@
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -8,7 +9,30 @@ from flask import Flask, redirect, render_template_string, request, url_for
 
 app = Flask(__name__)
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PYTHON = sys.executable
+
+
+def _resolve_python() -> str:
+    """Pick a Python interpreter that can execute project scripts.
+
+    When this GUI is packaged as an executable (e.g. via PyInstaller),
+    ``sys.executable`` points to the app binary instead of python itself.
+    In that case, service launches fail if we try to run script files through
+    the GUI executable. We therefore fall back to a real python command.
+    """
+
+    exe = sys.executable or ""
+    base = os.path.basename(exe).lower()
+    if exe and "python" in base and os.path.exists(exe):
+        return exe
+
+    env_python = os.environ.get("MPA_PYTHON", "").strip()
+    if env_python:
+        return env_python
+
+    return shutil.which("python3") or shutil.which("python") or "python3"
+
+
+PYTHON = _resolve_python()
 MINER_BASE_PORT = 8090
 
 SERVICES = {
