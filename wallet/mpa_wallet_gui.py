@@ -18,12 +18,12 @@ def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_valu
     amount_raw = amount_raw.strip()
 
     if not sender_value or not receiver_value or not nonce_value or not amount_raw:
-        raise ValueError("sender, receiver, amount και nonce είναι υποχρεωτικά")
+        raise ValueError("sender, receiver, amount, and nonce are required")
 
     try:
         amount_value = float(amount_raw)
     except ValueError as exc:
-        raise ValueError(f"μη έγκυρο amount '{amount_raw}'. Βάλε αριθμό") from exc
+        raise ValueError(f"invalid amount '{amount_raw}'. Enter a number") from exc
 
     return {
         "sender": sender_value,

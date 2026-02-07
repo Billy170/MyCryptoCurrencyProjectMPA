@@ -1,84 +1,84 @@
 # MPA Coin — Complete Local Crypto Stack
 
-Το **MPA Coin** είναι ένα πλήρες local-first demo crypto project με:
-- blockchain core,
-- P2P node,
+**MPA Coin** is a local-first demo crypto project that includes:
+- blockchain core logic,
+- a P2P node,
 - pool server + pool web GUI,
 - wallet web GUI,
 - miner web GUI (CPU mode),
 - explorer,
-- και **κεντρικό one-tab control center** για διαχείριση όλων των services.
+- and a **central one-tab control center** to manage all services.
 
 ---
 
-## ✨ Βασικά χαρακτηριστικά
+## ✨ Key Features
 
-- **Central Web GUI** (port `8060`) για εκκίνηση/παύση υπηρεσιών και miners.
-- **P2P Node** (port `5000`) ενσωματωμένο στη ροή εκκίνησης.
-- **Pool Server** (TCP `3333`, API `3334`) με wallet registration/login και balance APIs.
-- **Wallet Web GUI** (port `8070`) για login/register wallet και υπογραφή TX.
-- **Pool Web GUI** (port `8080`) για παρακολούθηση pool κατάστασης.
-- **Explorer** (port `8050`) για οπτική παρακολούθηση chain.
-- **Miner Web GUI(s)** (default από `8090` και πάνω) με start/stop mining.
-- **Quick Send MPA** από το central GUI με μόνο:
-  - wallet address παραλήπτη
-  - ποσό (MPA)
-
----
-
-## 🧱 Αρχιτεκτονική (γρήγορη εικόνα)
-
-- `launcher/central_web_gui.py` → ενοποιημένος πίνακας ελέγχου για όλα.
-- `pool/mpa_pool_server.py` → βασικός pool server + API για wallets/chain/transfer.
-- `wallet/wallet_web_gui.py` → wallet interface για χρήστη.
-- `miner/miner_web_gui.py` → miner interface και mining loop.
-- `p2p/node.py` → απλό P2P node endpoint για peers/blocks.
-- `launcher/mpa_launcher.py` → one-click launcher από terminal.
+- **Central Web GUI** (port `8060`) to start/stop services and miners.
+- **P2P Node** (port `5000`) integrated into the startup flow.
+- **Pool Server** (TCP `3333`, API `3334`) with wallet registration/login and balance APIs.
+- **Wallet Web GUI** (port `8070`) for wallet login/register and TX signing.
+- **Pool Web GUI** (port `8080`) to monitor pool state.
+- **Explorer** (port `8050`) for chain visualization.
+- **Miner Web GUI(s)** (default from `8090` and up) with start/stop mining controls.
+- **Quick Send MPA** from the central GUI with only:
+  - receiver wallet address
+  - amount (MPA)
 
 ---
 
-## ✅ Προαπαιτούμενα
+## 🧱 Architecture (Quick View)
+
+- `launcher/central_web_gui.py` → unified control panel for everything.
+- `pool/mpa_pool_server.py` → core pool server + API for wallets/chain/transfer.
+- `wallet/wallet_web_gui.py` → wallet interface for end users.
+- `miner/miner_web_gui.py` → miner interface and mining loop.
+- `p2p/node.py` → lightweight P2P node endpoint for peers/blocks.
+- `launcher/mpa_launcher.py` → one-click launcher from terminal.
+
+---
+
+## ✅ Requirements
 
 - Python **3.10+**
-- Linux/macOS shell (για scripts/launcher)
-- Ενεργό virtual environment (προτείνεται)
+- Linux/macOS shell (for scripts/launcher)
+- Active virtual environment (recommended)
 
 ---
 
-## 🚀 Εγκατάσταση
+## 🚀 Installation
 
-1. Clone το repository.
-2. (Προαιρετικά) Δημιούργησε virtualenv.
-3. Εγκατάστησε dependencies:
+1. Clone the repository.
+2. (Optional) Create a virtual environment.
+3. Install dependencies:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-> Το `-e .` (editable install) βοηθά να λύνουν σωστά τα imports του project.
+> `-e .` (editable install) helps resolve project imports correctly during development.
 
 ---
 
-## ▶️ Εκκίνηση εφαρμογής
+## ▶️ Run the Application
 
-### Επιλογή Α: Central Control Center (προτείνεται)
+### Option A: Central Control Center (recommended)
 
 ```bash
 python launcher/central_web_gui.py
 ```
 
-Μετά άνοιξε:
+Then open:
 - `http://127.0.0.1:8060`
 
-Από εκεί μπορείς:
+From there you can:
 - **Start / Refresh All**
 - **Stop All**
-- να ορίσεις πόσα miners θες,
-- να κάνεις **Start/Stop κάθε miner** ξεχωριστά,
-- να κάνεις **Quick Send MPA** με receiver + amount.
+- set how many miners you want,
+- **Start/Stop each miner** individually,
+- use **Quick Send MPA** with receiver + amount.
 
-### Επιλογή Β: One-click launcher από terminal
+### Option B: One-click launcher from terminal
 
 ```bash
 python launcher/mpa_launcher.py
@@ -86,7 +86,7 @@ python launcher/mpa_launcher.py
 
 ---
 
-## 🌐 Default ports
+## 🌐 Default Ports
 
 - Central GUI: `8060`
 - Explorer: `8050`
@@ -95,40 +95,40 @@ python launcher/mpa_launcher.py
 - Pool TCP: `3333`
 - Pool API: `3334`
 - P2P node: `5000`
-- Miner GUI base: `8090` (και `8091`, `8092`, ...)
+- Miner GUI base: `8090` (then `8091`, `8092`, ...)
 
 ---
 
-## 💸 Quick Send MPA (νέο flow)
+## 💸 Quick Send MPA
 
-Στο κεντρικό GUI υπάρχει φόρμα **Quick Send MPA** που απαιτεί μόνο:
+In the central GUI, the **Quick Send MPA** form requires only:
 1. `Wallet address` (receiver)
 2. `Amount`
 
-Εσωτερικά χρησιμοποιείται API call προς pool (`/api/transfer_simple`) και ενημερώνεται άμεσα το balance του receiver.
+Internally it calls the pool API endpoint (`/api/transfer_simple`) and updates the receiver balance immediately.
 
 ---
 
-## 🧪 Γρήγορος έλεγχος (smoke test)
+## 🧪 Quick Smoke Check
 
 ```bash
 python -m py_compile launcher/central_web_gui.py launcher/mpa_launcher.py pool/mpa_pool_server.py p2p/node.py
 ```
 
-Αν δεν επιστρέψει error, τα βασικά modules είναι syntactically valid.
+If no error is returned, the core modules are syntactically valid.
 
 ---
 
 ## 🧰 Troubleshooting
 
-- **Port already in use**: κλείσε παλιές διεργασίες ή άλλαξε port env vars.
-- **`ModuleNotFoundError`**: βεβαιώσου ότι έτρεξες `pip install -e .` στο σωστό env.
-- **Miner δεν ξεκινά**: έλεγξε αν ο pool server τρέχει (`3333`/`3334`).
-- **Central GUI start/stop issues**: προτίμησε να το τρέχεις με πραγματικό Python executable (όχι broken shim).
+- **Port already in use**: stop old processes or change port environment variables.
+- **`ModuleNotFoundError`**: make sure you ran `pip install -e .` in the correct environment.
+- **Miner not starting**: verify the pool server is running (`3333`/`3334`).
+- **Central GUI start/stop issues**: run with a real Python executable (not a broken shim).
 
 ---
 
-## 🗂️ Σύντομη δομή φακέλων
+## 🗂️ Project Structure (Short)
 
 - `launcher/` → launchers + central GUI
 - `pool/` → pool server + pool GUI
@@ -140,7 +140,7 @@ python -m py_compile launcher/central_web_gui.py launcher/mpa_launcher.py pool/m
 
 ---
 
-## 📌 Σημειώσεις
+## 📌 Notes
 
-- Το project είναι demo/dev friendly και τρέχει τοπικά.
-- Για production setup χρειάζονται επιπλέον hardening, auth, persistence strategy και process supervision.
+- The project is demo/dev friendly and runs locally.
+- A production setup needs additional hardening, auth, persistence strategy, and process supervision.

@@ -242,7 +242,7 @@ TPL = """
       </form>
       {% if send_error %}<div class="down" style="margin-top:8px;">{{ send_error }}</div>{% endif %}
       {% if send_ok %}<div class="ok" style="margin-top:8px;">{{ send_ok }}</div>{% endif %}
-      <div style="font-size:12px;color:#93a4bf;margin-top:6px;">Το quick send θέλει μόνο wallet address + ποσό.</div>
+      <div style="font-size:12px;color:#93a4bf;margin-top:6px;">Quick send requires only wallet address + amount.</div>
     </div>
 
     <div class="card">
@@ -321,15 +321,15 @@ def send_mpa_route():
     amount_raw = request.form.get("amount", "").strip()
 
     if not receiver or not amount_raw:
-        return _render_home(send_error="wallet address και ποσό είναι υποχρεωτικά", send_receiver=receiver, send_amount=amount_raw)
+        return _render_home(send_error="wallet address and amount are required", send_receiver=receiver, send_amount=amount_raw)
 
     try:
         amount = float(amount_raw)
     except ValueError:
-        return _render_home(send_error="βάλε έγκυρο ποσό", send_receiver=receiver, send_amount=amount_raw)
+        return _render_home(send_error="enter a valid amount", send_receiver=receiver, send_amount=amount_raw)
 
     if amount <= 0:
-        return _render_home(send_error="το ποσό πρέπει να είναι > 0", send_receiver=receiver, send_amount=amount_raw)
+        return _render_home(send_error="amount must be > 0", send_receiver=receiver, send_amount=amount_raw)
 
     try:
         data, _ = _api_post("/api/transfer_simple", {"receiver": receiver, "amount": amount})
@@ -339,7 +339,7 @@ def send_mpa_route():
     if not data.get("ok"):
         return _render_home(send_error=data.get("error", "send failed"), send_receiver=receiver, send_amount=amount_raw)
 
-    return _render_home(send_ok=f"Στάλθηκαν {amount:.4f} MPA στο {receiver}")
+    return _render_home(send_ok=f"Sent {amount:.4f} MPA to {receiver}")
 
 
 @app.post("/set_miner_count")
