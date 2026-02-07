@@ -15,7 +15,6 @@ SERVICES = [
     {"name": "wallet-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "wallet", "wallet_web_gui.py")], "port": 8070},
     {"name": "miner-web-gui", "cmd": [PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")], "port": 8090},
     {"name": "explorer-rpc", "cmd": [PYTHON, os.path.join(ROOT, "..", "explorer", "explorer_rpc.py")]},
-    {"name": "admin-dashboard", "cmd": [PYTHON, os.path.join(ROOT, "..", "admin", "admin_dashboard.py")], "port": 9000},
 ]
 
 

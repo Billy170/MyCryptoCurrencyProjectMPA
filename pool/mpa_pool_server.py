@@ -259,6 +259,38 @@ def register_wallet_api():
     return jsonify({"ok": True, "wallet": wallet, "email": email})
 
 
+
+
+@api_app.post("/api/transfer_simple")
+def transfer_simple_api():
+    data = request.get_json(silent=True) or {}
+    receiver = str(data.get("receiver", "")).strip()
+    amount_raw = data.get("amount", 0)
+
+    if not receiver:
+        return jsonify({"ok": False, "error": "receiver is required"}), 400
+
+    try:
+        amount = float(amount_raw)
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid amount"}), 400
+
+    if amount <= 0:
+        return jsonify({"ok": False, "error": "amount must be > 0"}), 400
+
+    with state_lock:
+        tx = {
+            "type": "transfer",
+            "sender": "SYSTEM",
+            "receiver": receiver,
+            "amount": amount,
+            "timestamp": time.time(),
+            "coin": "MPA",
+        }
+        _append_chain_tx(tx)
+        _sync_balances_from_chain()
+
+    return jsonify({"ok": True, "tx": tx})
 @api_app.post("/api/login_wallet")
 def login_wallet_api():
     data = request.get_json(silent=True) or {}

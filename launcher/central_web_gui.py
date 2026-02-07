@@ -1,25 +1,20 @@
+import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
 import time
+from urllib.request import Request, urlopen
 
 from flask import Flask, redirect, render_template_string, request, url_for
 
 app = Flask(__name__)
 ROOT = os.path.dirname(os.path.abspath(__file__))
+POOL_API = os.environ.get("MPA_POOL_API_URL", "http://127.0.0.1:3334")
 
 
 def _resolve_python() -> str:
-    """Pick a Python interpreter that can execute project scripts.
-
-    When this GUI is packaged as an executable (e.g. via PyInstaller),
-    ``sys.executable`` points to the app binary instead of python itself.
-    In that case, service launches fail if we try to run script files through
-    the GUI executable. We therefore fall back to a real python command.
-    """
-
     exe = sys.executable or ""
     base = os.path.basename(exe).lower()
     if exe and "python" in base and os.path.exists(exe):
@@ -36,6 +31,11 @@ PYTHON = _resolve_python()
 MINER_BASE_PORT = 8090
 
 SERVICES = {
+    "p2p": {
+        "name": "P2P Node",
+        "port": 5000,
+        "commands": [[PYTHON, os.path.join(ROOT, "..", "p2p", "node.py")]],
+    },
     "explorer": {
         "name": "Blockchain Map Explorer",
         "port": 8050,
@@ -85,7 +85,20 @@ def _target_port_for_command(cmd) -> int:
         return 8050
     if "miner_web_gui.py" in text:
         return MINER_BASE_PORT
+    if "p2p/node.py" in text:
+        return 5000
     return 0
+
+
+def _api_post(path: str, payload: dict):
+    req = Request(
+        f"{POOL_API}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=2.0) as resp:
+        return json.loads(resp.read().decode()), resp.getcode()
 
 
 def start_service(key: str):
@@ -97,16 +110,42 @@ def start_service(key: str):
         _start_cmd(cmd)
 
 
+def _post_local(port: int, path: str):
+    req = Request(f"http://127.0.0.1:{port}{path}", data=b"", method="POST")
+    with urlopen(req, timeout=1.5):
+        return True
+
+
+def start_miner(port: int):
+    miner_idx = max(0, port - MINER_BASE_PORT)
+    if not is_service_online(port):
+        env = os.environ.copy()
+        env["MPA_MINER_PORT"] = str(port)
+        env["MPA_MINER_ID"] = f"web-miner-{miner_idx + 1}"
+        _start_cmd([PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")], env=env)
+        for _ in range(20):
+            if is_service_online(port):
+                break
+            time.sleep(0.15)
+    if is_service_online(port):
+        try:
+            _post_local(port, "/start")
+        except Exception:
+            pass
+
+
+def stop_miner(port: int):
+    if is_service_online(port):
+        try:
+            _post_local(port, "/stop")
+        except Exception:
+            pass
+
+
 def start_miners(count: int):
     count = max(1, min(16, count))
     for i in range(count):
-        port = MINER_BASE_PORT + i
-        if is_service_online(port):
-            continue
-        env = os.environ.copy()
-        env["MPA_MINER_PORT"] = str(port)
-        env["MPA_MINER_ID"] = f"web-miner-{i+1}"
-        _start_cmd([PYTHON, os.path.join(ROOT, "..", "miner", "miner_web_gui.py")], env=env)
+        start_miner(MINER_BASE_PORT + i)
 
 
 def miner_online_ports(count: int):
@@ -121,7 +160,6 @@ def start_all(miner_count: int):
 
 
 def stop_all():
-    # Stop spawned children first
     alive = []
     for proc in children:
         if proc.poll() is None:
@@ -140,8 +178,8 @@ def stop_all():
             except Exception:
                 pass
 
-    # Best-effort cleanup for already-running processes on known scripts
     for pattern in [
+        "p2p/node.py",
         "pool/mpa_pool_server.py",
         "pool/mpa_pool_gui.py",
         "wallet/wallet_web_gui.py",
@@ -194,6 +232,20 @@ TPL = """
     </div>
 
     <div class="card">
+      <h3>Quick Send MPA</h3>
+      <form method="post" action="{{ url_for('send_mpa_route') }}">
+        <label>Wallet address (receiver)</label>
+        <input name="receiver" placeholder="MPA-..." value="{{ send_receiver }}" />
+        <label>Amount (MPA)</label>
+        <input name="amount" placeholder="0.01" value="{{ send_amount }}" />
+        <button type="submit">Send</button>
+      </form>
+      {% if send_error %}<div class="down" style="margin-top:8px;">{{ send_error }}</div>{% endif %}
+      {% if send_ok %}<div class="ok" style="margin-top:8px;">{{ send_ok }}</div>{% endif %}
+      <div style="font-size:12px;color:#93a4bf;margin-top:6px;">Το quick send θέλει μόνο wallet address + ποσό.</div>
+    </div>
+
+    <div class="card">
       {% for s in services %}
         <div><strong>{{ s.name }}</strong> — {% if s.online %}<span class="ok">Online</span>{% else %}<span class="down">Offline</span>{% endif %}</div>
       {% endfor %}
@@ -211,6 +263,12 @@ TPL = """
         {% for port in miner_ports %}
           <div>
             <div style="margin-bottom:6px;">Miner on port {{ port }}</div>
+            <form method="post" action="{{ url_for('start_miner_route', port=port) }}" style="display:inline-block; margin-bottom:6px;">
+              <button type="submit">Start Miner</button>
+            </form>
+            <form method="post" action="{{ url_for('stop_miner_route', port=port) }}" style="display:inline-block; margin-bottom:6px;">
+              <button class="danger" type="submit">Stop Miner</button>
+            </form>
             <iframe src="http://{{ host }}:{{ port }}/"></iframe>
           </div>
         {% else %}
@@ -224,8 +282,7 @@ TPL = """
 """
 
 
-@app.get("/")
-def home():
+def _render_home(send_error: str = "", send_ok: str = "", send_receiver: str = "", send_amount: str = ""):
     try:
         miner_count = int(request.cookies.get("miner_count", "1"))
     except ValueError:
@@ -246,7 +303,43 @@ def home():
         miners_online=online_miners,
         miner_ports=miner_ports,
         host=host,
+        send_error=send_error,
+        send_ok=send_ok,
+        send_receiver=send_receiver,
+        send_amount=send_amount,
     )
+
+
+@app.get("/")
+def home():
+    return _render_home()
+
+
+@app.post("/send/mpa")
+def send_mpa_route():
+    receiver = request.form.get("receiver", "").strip()
+    amount_raw = request.form.get("amount", "").strip()
+
+    if not receiver or not amount_raw:
+        return _render_home(send_error="wallet address και ποσό είναι υποχρεωτικά", send_receiver=receiver, send_amount=amount_raw)
+
+    try:
+        amount = float(amount_raw)
+    except ValueError:
+        return _render_home(send_error="βάλε έγκυρο ποσό", send_receiver=receiver, send_amount=amount_raw)
+
+    if amount <= 0:
+        return _render_home(send_error="το ποσό πρέπει να είναι > 0", send_receiver=receiver, send_amount=amount_raw)
+
+    try:
+        data, _ = _api_post("/api/transfer_simple", {"receiver": receiver, "amount": amount})
+    except Exception as exc:
+        return _render_home(send_error=f"send error: {exc}", send_receiver=receiver, send_amount=amount_raw)
+
+    if not data.get("ok"):
+        return _render_home(send_error=data.get("error", "send failed"), send_receiver=receiver, send_amount=amount_raw)
+
+    return _render_home(send_ok=f"Στάλθηκαν {amount:.4f} MPA στο {receiver}")
 
 
 @app.post("/set_miner_count")
@@ -286,6 +379,20 @@ def stop_all_route():
     resp = redirect(url_for("home"))
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.post("/miner/start/<int:port>")
+def start_miner_route(port: int):
+    if MINER_BASE_PORT <= port <= MINER_BASE_PORT + 15:
+        start_miner(port)
+    return redirect(url_for("workspace"))
+
+
+@app.post("/miner/stop/<int:port>")
+def stop_miner_route(port: int):
+    if MINER_BASE_PORT <= port <= MINER_BASE_PORT + 15:
+        stop_miner(port)
+    return redirect(url_for("workspace"))
 
 
 @app.get("/open/<key>")
