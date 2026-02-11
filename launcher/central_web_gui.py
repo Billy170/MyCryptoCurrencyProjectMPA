@@ -232,20 +232,6 @@ TPL = """
     </div>
 
     <div class="card">
-      <h3>Quick Send MPA</h3>
-      <form method="post" action="{{ url_for('send_mpa_route') }}">
-        <label>Wallet address (receiver)</label>
-        <input name="receiver" placeholder="MPA-..." value="{{ send_receiver }}" />
-        <label>Amount (MPA)</label>
-        <input name="amount" placeholder="0.01" value="{{ send_amount }}" />
-        <button type="submit">Send</button>
-      </form>
-      {% if send_error %}<div class="down" style="margin-top:8px;">{{ send_error }}</div>{% endif %}
-      {% if send_ok %}<div class="ok" style="margin-top:8px;">{{ send_ok }}</div>{% endif %}
-      <div style="font-size:12px;color:#93a4bf;margin-top:6px;">Quick send requires only wallet address + amount.</div>
-    </div>
-
-    <div class="card">
       {% for s in services %}
         <div><strong>{{ s.name }}</strong> — {% if s.online %}<span class="ok">Online</span>{% else %}<span class="down">Offline</span>{% endif %}</div>
       {% endfor %}
@@ -282,7 +268,7 @@ TPL = """
 """
 
 
-def _render_home(send_error: str = "", send_ok: str = "", send_receiver: str = "", send_amount: str = ""):
+def _render_home():
     try:
         miner_count = int(request.cookies.get("miner_count", "1"))
     except ValueError:
@@ -303,43 +289,12 @@ def _render_home(send_error: str = "", send_ok: str = "", send_receiver: str = "
         miners_online=online_miners,
         miner_ports=miner_ports,
         host=host,
-        send_error=send_error,
-        send_ok=send_ok,
-        send_receiver=send_receiver,
-        send_amount=send_amount,
     )
 
 
 @app.get("/")
 def home():
     return _render_home()
-
-
-@app.post("/send/mpa")
-def send_mpa_route():
-    receiver = request.form.get("receiver", "").strip()
-    amount_raw = request.form.get("amount", "").strip()
-
-    if not receiver or not amount_raw:
-        return _render_home(send_error="wallet address and amount are required", send_receiver=receiver, send_amount=amount_raw)
-
-    try:
-        amount = float(amount_raw)
-    except ValueError:
-        return _render_home(send_error="enter a valid amount", send_receiver=receiver, send_amount=amount_raw)
-
-    if amount <= 0:
-        return _render_home(send_error="amount must be > 0", send_receiver=receiver, send_amount=amount_raw)
-
-    try:
-        data, _ = _api_post("/api/transfer_simple", {"receiver": receiver, "amount": amount})
-    except Exception as exc:
-        return _render_home(send_error=f"send error: {exc}", send_receiver=receiver, send_amount=amount_raw)
-
-    if not data.get("ok"):
-        return _render_home(send_error=data.get("error", "send failed"), send_receiver=receiver, send_amount=amount_raw)
-
-    return _render_home(send_ok=f"Sent {amount:.4f} MPA to {receiver}")
 
 
 @app.post("/set_miner_count")

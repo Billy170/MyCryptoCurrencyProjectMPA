@@ -5,7 +5,6 @@ import time
 try:
     from .mpa_crypto import verify_transaction
 except ImportError:
-    # Allow running this module directly from within the `mpa_core` directory.
     from mpa_crypto import verify_transaction
 
 
@@ -49,6 +48,7 @@ class Blockchain:
         return self._sha256(json.dumps(header, sort_keys=True))
 
     def _create_genesis_block(self):
+        now = time.localtime()
         genesis = {
             "index": 0,
             "timestamp": time.time(),
@@ -58,6 +58,11 @@ class Blockchain:
             "nonce": 0,
             "difficulty": self.difficulty,
             "miner": "GENESIS",
+            "miner_address": "GENESIS",
+            "date": time.strftime("%Y-%m-%d", now),
+            "hour": now.tm_hour,
+            "minute": now.tm_min,
+            "second": now.tm_sec,
         }
         genesis["hash"] = self._block_header_hash(genesis)
         self.chain.append(genesis)
@@ -73,9 +78,10 @@ class Blockchain:
             return True
         return False
 
-    def mine(self, miner):
+    def mine(self, miner, miner_address="", extra_data=None):
         txs = list(self.pending_transactions)
         prev_hash = self.chain[-1]["hash"]
+        now = time.localtime()
         block = {
             "index": len(self.chain),
             "timestamp": time.time(),
@@ -85,8 +91,15 @@ class Blockchain:
             "nonce": 0,
             "difficulty": self.difficulty,
             "miner": miner,
+            "miner_address": miner_address or miner,
+            "date": time.strftime("%Y-%m-%d", now),
+            "hour": now.tm_hour,
+            "minute": now.tm_min,
+            "second": now.tm_sec,
         }
-        target_prefix = "0" * self.difficulty
+        if isinstance(extra_data, dict):
+            block.update(extra_data)
+        target_prefix = "0" * int(max(1, round(self.difficulty)))
         while True:
             block_hash = self._block_header_hash(block)
             if block_hash.startswith(target_prefix):
@@ -99,4 +112,4 @@ class Blockchain:
         return block
 
     def current_reward(self):
-        return 50
+        return 25

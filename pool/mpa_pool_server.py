@@ -110,10 +110,10 @@ def _apply_sync_ack(role: str, node_id: str, last_block: int):
     _maybe_approve_latest_block()
 
 
-def _append_chain_tx(tx: dict):
+def _append_chain_tx(tx: dict, miner_label: str = "POOL", miner_address: str = "POOL"):
     """Append a transaction to blockchain and mine immediately (demo chain)."""
     bc.pending_transactions.append(tx)
-    block = bc.mine("POOL")
+    block = bc.mine(miner_label, miner_address=miner_address)
     _mark_new_block(block)
     _save_chain_state()
 
@@ -167,6 +167,9 @@ def pool_stats_api():
         miners_copy = {k: dict(v) for k, v in miners.items()}
         _sync_balances_from_chain()
         wallet_copy = dict(wallet_balances)
+        for miner_id, info in miners_copy.items():
+            miner_wallet = str(info.get("wallet", ""))
+            info["wallet_balance"] = float(wallet_copy.get(miner_wallet, 0.0))
 
     return jsonify(
         {
@@ -203,6 +206,11 @@ def chain_api():
                 "miner": b.get("miner"),
                 "nonce": b.get("nonce"),
                 "difficulty": b.get("difficulty"),
+                "miner_address": b.get("miner_address", ""),
+                "date": b.get("date", ""),
+                "hour": b.get("hour", 0),
+                "minute": b.get("minute", 0),
+                "second": b.get("second", 0),
             }
             for b in bc.chain
         ]
@@ -216,6 +224,20 @@ def block_api(index: int):
             return jsonify({"ok": False, "error": "block not found"}), 404
         return jsonify({"ok": True, "block": bc.chain[index]})
 
+
+
+
+@api_app.get("/api/blocks")
+def blocks_range_api():
+    start = int(request.args.get("start", 0) or 0)
+    limit = int(request.args.get("limit", 25) or 25)
+    start = max(0, start)
+    limit = max(1, min(500, limit))
+    with state_lock:
+        end = min(len(bc.chain), start + limit)
+        items = bc.chain[start:end]
+        total = len(bc.chain)
+    return jsonify({"ok": True, "start": start, "end": end, "total": total, "blocks": items})
 
 @api_app.post("/api/sync")
 def sync_api():
@@ -253,7 +275,7 @@ def register_wallet_api():
             "timestamp": time.time(),
             "coin": "MPA",
         }
-        _append_chain_tx(tx)
+        _append_chain_tx(tx, miner_label="SYSTEM", miner_address="SYSTEM")
         _sync_balances_from_chain()
 
     return jsonify({"ok": True, "wallet": wallet, "email": email})
@@ -287,10 +309,54 @@ def transfer_simple_api():
             "timestamp": time.time(),
             "coin": "MPA",
         }
-        _append_chain_tx(tx)
+        _append_chain_tx(tx, miner_label="SYSTEM", miner_address="SYSTEM")
         _sync_balances_from_chain()
 
     return jsonify({"ok": True, "tx": tx})
+
+
+@api_app.post("/api/transfer_wallet")
+def transfer_wallet_api():
+    data = request.get_json(silent=True) or {}
+    sender = str(data.get("sender", "")).strip()
+    receiver = str(data.get("receiver", "")).strip()
+    amount_raw = data.get("amount", 0)
+
+    if not sender or not receiver:
+        return jsonify({"ok": False, "error": "sender and receiver are required"}), 400
+
+    try:
+        amount = float(amount_raw)
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid amount"}), 400
+
+    if amount <= 0:
+        return jsonify({"ok": False, "error": "amount must be > 0"}), 400
+
+    with state_lock:
+        _sync_balances_from_chain()
+        sender_balance = float(wallet_balances.get(sender, 0.0))
+        if sender_balance < amount:
+            return jsonify({"ok": False, "error": "insufficient balance", "balance": sender_balance}), 400
+
+        tx = {
+            "type": "transfer",
+            "sender": sender,
+            "receiver": receiver,
+            "amount": amount,
+            "timestamp": time.time(),
+            "coin": "MPA",
+        }
+        _append_chain_tx(tx, miner_label=sender, miner_address=sender)
+        _sync_balances_from_chain()
+
+    return jsonify({
+        "ok": True,
+        "tx": tx,
+        "sender_balance": float(wallet_balances.get(sender, 0.0)),
+        "receiver_balance": float(wallet_balances.get(receiver, 0.0)),
+    })
+
 @api_app.post("/api/login_wallet")
 def login_wallet_api():
     data = request.get_json(silent=True) or {}
@@ -322,9 +388,27 @@ def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
     with state_lock:
         is_new_miner = miner_id not in miners
         if is_new_miner:
-            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0}
-            for m in miners.values():
-                m["difficulty"] = round(float(m.get("difficulty", 1.0)) + 0.05, 2)
+            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0, "registered": False}
+            _append_chain_tx(
+                {
+                    "type": "miner_register",
+                    "miner_id": miner_id,
+                    "wallet": wallet,
+                    "timestamp": time.time(),
+                    "coin": "MPA",
+                },
+                miner_label=miner_id,
+                miner_address=wallet,
+            )
+            miners[miner_id]["registered"] = True
+
+        registered_miners = sum(1 for m in miners.values() if m.get("registered"))
+        network_difficulty = round(1 + (registered_miners * 0.536), 3)
+        bc.difficulty = max(1, int(round(network_difficulty)))
+
+        for m in miners.values():
+            m["difficulty"] = network_difficulty
+
         miners[miner_id]["shares"] += 1
         miners[miner_id]["wallet"] = wallet
         miners[miner_id]["hashrate"] = int(hashrate)
@@ -334,11 +418,13 @@ def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
                 "type": "mining_reward",
                 "sender": "SYSTEM",
                 "receiver": wallet,
-                "amount": 0.01,
+                "amount": 25.0,
                 "miner_id": miner_id,
                 "timestamp": time.time(),
                 "coin": "MPA",
-            }
+            },
+            miner_label=miner_id,
+            miner_address=wallet,
         )
         _sync_balances_from_chain()
 
