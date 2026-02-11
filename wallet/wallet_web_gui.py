@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import sys
+import time
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,8 +33,6 @@ def _api_post(path: str, payload: dict):
         return json.loads(resp.read().decode()), resp.getcode()
 
 
-
-
 def _sync_network(role: str, node_id: str, last_block: int):
     payload = {"role": role, "node_id": node_id, "last_block": int(last_block)}
     req = Request(
@@ -43,6 +43,7 @@ def _sync_network(role: str, node_id: str, last_block: int):
     )
     with urlopen(req, timeout=1.5):
         pass
+
 
 def get_wallet_balance(address: str) -> float:
     try:
@@ -72,28 +73,66 @@ def _save_wallet_blocks(data: dict):
         pass
 
 
-def get_chain_height(wallet_address: str) -> int:
-    cached = int(_load_wallet_blocks().get(wallet_address or "", 0) or 0)
+def _wallet_chain_file(wallet_address: str) -> str:
+    safe_wallet = re.sub(r"[^a-zA-Z0-9_-]", "_", wallet_address or "unknown")
+    return os.path.join(STATE_DIR, f"wallet_chain_{safe_wallet}.json")
+
+
+def _download_blockchain_for_wallet(wallet_address: str) -> dict:
+    if not wallet_address:
+        return {"ok": False, "error": "wallet address missing", "downloaded": 0, "chain_height": 0}
+
     try:
-        with urlopen(f"{POOL_API}/api/chain", timeout=1.2) as resp:
-            data = json.loads(resp.read().decode())
-        current = int(data.get("chain_height", 0) or 0)
-        if wallet_address:
-            blocks = _load_wallet_blocks()
-            blocks[wallet_address] = current
-            _save_wallet_blocks(blocks)
-            try:
-                _sync_network("wallet", wallet_address, current)
-            except Exception:
-                pass
-        return current
-    except Exception:
-        if wallet_address and cached > 0:
-            try:
-                _sync_network("wallet", wallet_address, cached)
-            except Exception:
-                pass
-        return cached
+        with urlopen(f"{POOL_API}/api/chain", timeout=2.0) as resp:
+            chain_data = json.loads(resp.read().decode())
+        blocks = chain_data.get("blocks", [])
+        if not isinstance(blocks, list):
+            blocks = []
+
+        full_chain = []
+        for block in blocks:
+            idx = int(block.get("index", 0))
+            with urlopen(f"{POOL_API}/api/block/{idx}", timeout=2.0) as resp:
+                detail = json.loads(resp.read().decode())
+            if detail.get("ok") and isinstance(detail.get("block"), dict):
+                full_chain.append(detail["block"])
+
+        if not full_chain:
+            return {"ok": False, "error": "could not download blockchain", "downloaded": 0, "chain_height": 0}
+
+        with open(_wallet_chain_file(wallet_address), "w", encoding="utf-8") as f:
+            json.dump({"wallet": wallet_address, "chain": full_chain, "synced_at": time.time()}, f)
+
+        wallet_blocks = _load_wallet_blocks()
+        wallet_blocks[wallet_address] = {
+            "height": len(full_chain),
+            "updated_at": time.time(),
+            "last_hash": full_chain[-1].get("hash", ""),
+        }
+        _save_wallet_blocks(wallet_blocks)
+
+        try:
+            _sync_network("wallet", wallet_address, len(full_chain))
+        except Exception:
+            pass
+
+        return {"ok": True, "downloaded": len(full_chain), "chain_height": len(full_chain), "last_hash": full_chain[-1].get("hash", "")}
+    except Exception as exc:
+        fallback = _load_wallet_blocks().get(wallet_address, {})
+        return {
+            "ok": False,
+            "error": str(exc),
+            "downloaded": int(fallback.get("height", 0) or 0),
+            "chain_height": int(fallback.get("height", 0) or 0),
+            "offline": True,
+        }
+
+
+def get_chain_height(wallet_address: str) -> int:
+    info = _load_wallet_blocks().get(wallet_address or "", {})
+    if isinstance(info, dict):
+        return int(info.get("height", 0) or 0)
+    return int(info or 0)
 
 
 def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_value: str):
@@ -170,28 +209,54 @@ WALLET_TPL = """
     .panel { background:#111827; border-radius:12px; padding:16px; margin-bottom:12px; }
     label { display:block; margin:8px 0 4px; color:#93c5fd; }
     input { width:100%; padding:10px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; }
-    button { margin-top:12px; background:#2563eb; color:white; border:0; padding:10px 14px; border-radius:8px; cursor:pointer; }
-    pre { white-space: pre-wrap; word-break: break-word; background:#0b1220; border-radius:8px; padding:12px; }
+    button { margin-top:12px; background:#2563eb; color:#fff; border:0; border-radius:8px; padding:10px 14px; cursor:pointer; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#0b1220; padding:10px; border-radius:8px; }
     .err { color:#fca5a5; }
     .ok { color:#34d399; }
-    a { color:#93c5fd; }
+    .overlay {
+      position: fixed; inset:0; background: rgba(2, 6, 23, 0.9); z-index:9999;
+      display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px;
+    }
+    .spinner {
+      width:58px; height:58px; border-radius:50%; border:5px solid #1e293b; border-top-color:#38bdf8;
+      animation: spin 1s linear infinite;
+    }
+    .pulse-bar {
+      width:260px; height:8px; background:#1e293b; border-radius:999px; overflow:hidden;
+    }
+    .pulse-bar::after {
+      content:""; display:block; width:45%; height:100%; background:#2563eb;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes pulse {
+      0% { transform:translateX(-120%); }
+      100% { transform:translateX(260%); }
+    }
+    .muted { color:#93a4bf; font-size:12px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>MPA Wallet Web GUI</h1>
-    <p><a href="/api/pubkey">Public key API</a> · <a href="/api/wallet">Wallet API</a> · <a href="/logout">Logout</a></p>
+  <div id="syncOverlay" class="overlay" {% if not auto_sync %}style="display:none"{% endif %}>
+    <div class="spinner"></div>
+    <div><strong>Downloading blockchain...</strong></div>
+    <div class="pulse-bar"></div>
+    <div id="syncMessage" class="muted">Syncing wallet with latest network blocks...</div>
+  </div>
 
+  <div class="container" id="walletArea">
+    <h1>MPA Wallet</h1>
     <div class="panel">
       <div><strong>Email:</strong> {{ email }}</div>
-      <div><strong>Wallet address:</strong> {{ wallet_address }}</div>
+      <div><strong>Wallet:</strong> {{ wallet_address }}</div>
       <div class="ok"><strong>Balance:</strong> {{ '%.4f'|format(balance) }} MPA</div>
-      <div><strong>Blocks mined on network:</strong> {{ chain_height }}</div>
-      <div style="font-size:12px;color:#93a4bf;">Auto-refresh every 2 seconds</div>
+      <div><strong>Downloaded blocks:</strong> <span id="chainHeight">{{ chain_height }}</span></div>
+      <div class="muted">Blockchain sync runs on each wallet open before actions are enabled.</div>
+      <a href="/logout" style="color:#93c5fd;">Logout</a>
     </div>
 
     <div class="panel">
-      <form method="post" action="/sign">
+      <form method="post" action="/sign" id="signForm">
         <label>Sender</label>
         <input name="sender" value="{{ sender }}" />
         <label>Receiver</label>
@@ -209,8 +274,30 @@ WALLET_TPL = """
       {% if tx_text %}<pre>{{ tx_text }}</pre>{% endif %}
     </div>
   </div>
+
   <script>
-    setTimeout(() => window.location.reload(), 2000);
+    async function runWalletSync() {
+      const overlay = document.getElementById('syncOverlay');
+      const msg = document.getElementById('syncMessage');
+      try {
+        const response = await fetch('/api/wallet/sync', { method: 'POST' });
+        const data = await response.json();
+        if (data.ok) {
+          msg.textContent = `Blockchain synced: ${data.chain_height} blocks downloaded.`;
+          const ch = document.getElementById('chainHeight');
+          if (ch) ch.textContent = data.chain_height;
+        } else {
+          msg.textContent = `Sync warning: ${data.error || 'network unavailable'}`;
+        }
+      } catch (e) {
+        msg.textContent = 'Sync warning: unable to contact pool API.';
+      }
+      setTimeout(() => { overlay.style.display = 'none'; }, 700);
+    }
+
+    {% if auto_sync %}
+    runWalletSync();
+    {% endif %}
   </script>
 </body>
 </html>
@@ -242,6 +329,7 @@ def render_wallet(**kwargs):
         "nonce": "",
         "error": "",
         "tx_text": "",
+        "auto_sync": bool(request.args.get("sync", "1") == "1"),
     }
     defaults.update(kwargs)
     return render_template_string(WALLET_TPL, **defaults)
@@ -313,6 +401,7 @@ def sign():
             amount=amount,
             nonce=nonce,
             tx_text=f"TX: {tx}\nSignature: {sig}",
+            auto_sync=False,
         )
     except ValueError as exc:
         return render_wallet(
@@ -321,7 +410,17 @@ def sign():
             amount=amount,
             nonce=nonce,
             error=f"Error: {exc}",
+            auto_sync=False,
         )
+
+
+@app.post("/api/wallet/sync")
+def wallet_sync_api():
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"ok": False, "error": "not authenticated"}), 401
+    result = _download_blockchain_for_wallet(wallet)
+    return jsonify(result)
 
 
 @app.get("/api/pubkey")
