@@ -78,54 +78,60 @@ def _wallet_chain_file(wallet_address: str) -> str:
     return os.path.join(STATE_DIR, f"wallet_chain_{safe_wallet}.json")
 
 
-def _download_blockchain_for_wallet(wallet_address: str) -> dict:
-    if not wallet_address:
-        return {"ok": False, "error": "wallet address missing", "downloaded": 0, "chain_height": 0}
-
+def _load_local_chain(wallet_address: str) -> list:
     try:
-        with urlopen(f"{POOL_API}/api/chain", timeout=2.0) as resp:
-            chain_data = json.loads(resp.read().decode())
-        blocks = chain_data.get("blocks", [])
-        if not isinstance(blocks, list):
-            blocks = []
+        with open(_wallet_chain_file(wallet_address), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        chain = data.get("chain", []) if isinstance(data, dict) else []
+        return chain if isinstance(chain, list) else []
+    except Exception:
+        return []
 
-        full_chain = []
-        for block in blocks:
-            idx = int(block.get("index", 0))
-            with urlopen(f"{POOL_API}/api/block/{idx}", timeout=2.0) as resp:
-                detail = json.loads(resp.read().decode())
-            if detail.get("ok") and isinstance(detail.get("block"), dict):
-                full_chain.append(detail["block"])
 
-        if not full_chain:
-            return {"ok": False, "error": "could not download blockchain", "downloaded": 0, "chain_height": 0}
+def _save_local_chain(wallet_address: str, chain: list):
+    with open(_wallet_chain_file(wallet_address), "w", encoding="utf-8") as f:
+        json.dump({"wallet": wallet_address, "chain": chain, "synced_at": time.time()}, f)
 
-        with open(_wallet_chain_file(wallet_address), "w", encoding="utf-8") as f:
-            json.dump({"wallet": wallet_address, "chain": full_chain, "synced_at": time.time()}, f)
 
-        wallet_blocks = _load_wallet_blocks()
-        wallet_blocks[wallet_address] = {
-            "height": len(full_chain),
-            "updated_at": time.time(),
-            "last_hash": full_chain[-1].get("hash", ""),
-        }
-        _save_wallet_blocks(wallet_blocks)
+def _fetch_remote_chain_summaries() -> list:
+    with urlopen(f"{POOL_API}/api/chain", timeout=2.0) as resp:
+        chain_data = json.loads(resp.read().decode())
+    blocks = chain_data.get("blocks", [])
+    return blocks if isinstance(blocks, list) else []
 
-        try:
-            _sync_network("wallet", wallet_address, len(full_chain))
-        except Exception:
-            pass
 
-        return {"ok": True, "downloaded": len(full_chain), "chain_height": len(full_chain), "last_hash": full_chain[-1].get("hash", "")}
-    except Exception as exc:
-        fallback = _load_wallet_blocks().get(wallet_address, {})
-        return {
-            "ok": False,
-            "error": str(exc),
-            "downloaded": int(fallback.get("height", 0) or 0),
-            "chain_height": int(fallback.get("height", 0) or 0),
-            "offline": True,
-        }
+def _update_wallet_meta(wallet_address: str, chain: list):
+    wallet_blocks = _load_wallet_blocks()
+    wallet_blocks[wallet_address] = {
+        "height": len(chain),
+        "updated_at": time.time(),
+        "last_hash": chain[-1].get("hash", "") if chain else "",
+    }
+    _save_wallet_blocks(wallet_blocks)
+    try:
+        _sync_network("wallet", wallet_address, len(chain))
+    except Exception:
+        pass
+
+
+def _prepare_chain(wallet_address: str):
+    remote = _fetch_remote_chain_summaries()
+    local = _load_local_chain(wallet_address)
+
+    if len(local) > len(remote):
+        local = local[: len(remote)]
+
+    mismatch = None
+    for idx in range(len(local)):
+        local_hash = str((local[idx] or {}).get("hash", ""))
+        remote_hash = str((remote[idx] or {}).get("hash", ""))
+        if local_hash and remote_hash and local_hash != remote_hash:
+            mismatch = idx
+            break
+    if mismatch is not None:
+        local = local[:mismatch]
+
+    return local, remote
 
 
 def get_chain_height(wallet_address: str) -> int:
@@ -213,50 +219,56 @@ WALLET_TPL = """
     pre { white-space:pre-wrap; word-break:break-word; background:#0b1220; padding:10px; border-radius:8px; }
     .err { color:#fca5a5; }
     .ok { color:#34d399; }
-    .overlay {
-      position: fixed; inset:0; background: rgba(2, 6, 23, 0.9); z-index:9999;
-      display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px;
-    }
-    .spinner {
-      width:58px; height:58px; border-radius:50%; border:5px solid #1e293b; border-top-color:#38bdf8;
-      animation: spin 1s linear infinite;
-    }
-    .pulse-bar {
-      width:260px; height:8px; background:#1e293b; border-radius:999px; overflow:hidden;
-    }
-    .pulse-bar::after {
-      content:""; display:block; width:45%; height:100%; background:#2563eb;
-      animation: pulse 1.4s ease-in-out infinite;
-    }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    @keyframes pulse {
-      0% { transform:translateX(-120%); }
-      100% { transform:translateX(260%); }
-    }
+    .overlay { position: fixed; inset:0; background: rgba(2,6,23,.92); z-index:9999; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+    .spinner { width:58px; height:58px; border-radius:50%; border:5px solid #1e293b; border-top-color:#38bdf8; animation: spin 1s linear infinite; }
+    .progress-wrap { width:300px; }
+    .progress-text { display:flex; justify-content:space-between; font-size:12px; color:#93a4bf; margin-bottom:4px; }
+    .progress-bg { width:100%; height:10px; border-radius:999px; overflow:hidden; background:#1e293b; }
+    .progress-fill { height:100%; width:0%; background:#2563eb; transition: width .2s ease; }
     .muted { color:#93a4bf; font-size:12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <div id="syncOverlay" class="overlay" {% if not auto_sync %}style="display:none"{% endif %}>
     <div class="spinner"></div>
     <div><strong>Downloading blockchain...</strong></div>
-    <div class="pulse-bar"></div>
-    <div id="syncMessage" class="muted">Syncing wallet with latest network blocks...</div>
+    <div class="progress-wrap">
+      <div class="progress-text">
+        <span id="syncDownloaded">0</span>
+        <span id="syncRemaining">remaining: 0</span>
+      </div>
+      <div class="progress-bg"><div id="syncProgress" class="progress-fill"></div></div>
+    </div>
+    <div id="syncMessage" class="muted">Preparing sync...</div>
   </div>
 
-  <div class="container" id="walletArea">
+  <div class="container">
     <h1>MPA Wallet</h1>
     <div class="panel">
       <div><strong>Email:</strong> {{ email }}</div>
       <div><strong>Wallet:</strong> {{ wallet_address }}</div>
       <div class="ok"><strong>Balance:</strong> {{ '%.4f'|format(balance) }} MPA</div>
       <div><strong>Downloaded blocks:</strong> <span id="chainHeight">{{ chain_height }}</span></div>
-      <div class="muted">Blockchain sync runs on each wallet open before actions are enabled.</div>
+      <div class="muted">On each open, wallet syncs only missing blocks.</div>
       <a href="/logout" style="color:#93c5fd;">Logout</a>
     </div>
 
     <div class="panel">
-      <form method="post" action="/sign" id="signForm">
+      <h3>Quick Send MPA</h3>
+      <form method="post" action="/quick_send">
+        <label>Receiver wallet</label>
+        <input name="quick_receiver" value="{{ quick_receiver }}" placeholder="MPA-..." />
+        <label>Amount (MPA)</label>
+        <input name="quick_amount" value="{{ quick_amount }}" placeholder="0.01" />
+        <button type="submit">Send</button>
+      </form>
+      {% if quick_error %}<div class="err" style="margin-top:8px;">{{ quick_error }}</div>{% endif %}
+      {% if quick_ok %}<div class="ok" style="margin-top:8px;">{{ quick_ok }}</div>{% endif %}
+    </div>
+
+    <div class="panel">
+      <form method="post" action="/sign">
         <label>Sender</label>
         <input name="sender" value="{{ sender }}" />
         <label>Receiver</label>
@@ -276,23 +288,40 @@ WALLET_TPL = """
   </div>
 
   <script>
+    function updateProgress(downloaded, total) {
+      const remaining = Math.max(0, total - downloaded);
+      document.getElementById('syncDownloaded').textContent = `downloaded: ${downloaded}/${total}`;
+      document.getElementById('syncRemaining').textContent = `remaining: ${remaining}`;
+      const pct = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 100;
+      document.getElementById('syncProgress').style.width = `${pct}%`;
+    }
+
     async function runWalletSync() {
       const overlay = document.getElementById('syncOverlay');
       const msg = document.getElementById('syncMessage');
       try {
-        const response = await fetch('/api/wallet/sync', { method: 'POST' });
-        const data = await response.json();
-        if (data.ok) {
-          msg.textContent = `Blockchain synced: ${data.chain_height} blocks downloaded.`;
-          const ch = document.getElementById('chainHeight');
-          if (ch) ch.textContent = data.chain_height;
-        } else {
-          msg.textContent = `Sync warning: ${data.error || 'network unavailable'}`;
+        const planRes = await fetch('/api/wallet/sync_plan');
+        const plan = await planRes.json();
+        let total = plan.total_blocks || 0;
+        let downloaded = plan.local_blocks || 0;
+        updateProgress(downloaded, total);
+        msg.textContent = `Need ${plan.missing_blocks || 0} missing blocks.`;
+
+        while ((plan.remaining_blocks || 0) > 0 || downloaded < total) {
+          const stepRes = await fetch('/api/wallet/sync_step', { method: 'POST' });
+          const step = await stepRes.json();
+          total = step.total_blocks || total;
+          downloaded = step.local_blocks || downloaded;
+          updateProgress(downloaded, total);
+          msg.textContent = step.message || 'Syncing blocks...';
+          if (!step.ok || (step.remaining_blocks || 0) <= 0) break;
         }
+
+        document.getElementById('chainHeight').textContent = downloaded;
       } catch (e) {
         msg.textContent = 'Sync warning: unable to contact pool API.';
       }
-      setTimeout(() => { overlay.style.display = 'none'; }, 700);
+      setTimeout(() => { overlay.style.display = 'none'; }, 600);
     }
 
     {% if auto_sync %}
@@ -330,6 +359,10 @@ def render_wallet(**kwargs):
         "error": "",
         "tx_text": "",
         "auto_sync": bool(request.args.get("sync", "1") == "1"),
+        "quick_receiver": "",
+        "quick_amount": "",
+        "quick_error": "",
+        "quick_ok": "",
     }
     defaults.update(kwargs)
     return render_template_string(WALLET_TPL, **defaults)
@@ -382,6 +415,36 @@ def logout():
     return redirect(url_for("home"))
 
 
+@app.post("/quick_send")
+def quick_send():
+    wallet = _session_wallet()
+    if not wallet:
+        return redirect(url_for("home"))
+
+    receiver = request.form.get("quick_receiver", "").strip()
+    amount_raw = request.form.get("quick_amount", "").strip()
+    if not receiver or not amount_raw:
+        return render_wallet(quick_receiver=receiver, quick_amount=amount_raw, quick_error="receiver and amount are required", auto_sync=False)
+
+    try:
+        amount = float(amount_raw)
+    except ValueError:
+        return render_wallet(quick_receiver=receiver, quick_amount=amount_raw, quick_error="enter a valid amount", auto_sync=False)
+
+    if amount <= 0:
+        return render_wallet(quick_receiver=receiver, quick_amount=amount_raw, quick_error="amount must be > 0", auto_sync=False)
+
+    try:
+        data, _ = _api_post("/api/transfer_wallet", {"sender": wallet, "receiver": receiver, "amount": amount})
+    except Exception as exc:
+        return render_wallet(quick_receiver=receiver, quick_amount=amount_raw, quick_error=f"send error: {exc}", auto_sync=False)
+
+    if not data.get("ok"):
+        return render_wallet(quick_receiver=receiver, quick_amount=amount_raw, quick_error=data.get("error", "send failed"), auto_sync=False)
+
+    return render_wallet(quick_ok=f"Sent {amount:.4f} MPA to {receiver}", auto_sync=False)
+
+
 @app.post("/sign")
 def sign():
     if not _session_wallet():
@@ -414,13 +477,66 @@ def sign():
         )
 
 
-@app.post("/api/wallet/sync")
-def wallet_sync_api():
+@app.get("/api/wallet/sync_plan")
+def wallet_sync_plan_api():
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"ok": False, "error": "not authenticated"}), 401
-    result = _download_blockchain_for_wallet(wallet)
-    return jsonify(result)
+    try:
+        local, remote = _prepare_chain(wallet)
+        _save_local_chain(wallet, local)
+        _update_wallet_meta(wallet, local)
+        return jsonify({
+            "ok": True,
+            "local_blocks": len(local),
+            "total_blocks": len(remote),
+            "missing_blocks": max(0, len(remote) - len(local)),
+            "remaining_blocks": max(0, len(remote) - len(local)),
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+
+
+@app.post("/api/wallet/sync_step")
+def wallet_sync_step_api():
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"ok": False, "error": "not authenticated"}), 401
+
+    try:
+        local, remote = _prepare_chain(wallet)
+        total = len(remote)
+        if len(local) >= total:
+            _save_local_chain(wallet, local)
+            _update_wallet_meta(wallet, local)
+            return jsonify({
+                "ok": True,
+                "message": "Blockchain is already up to date.",
+                "local_blocks": len(local),
+                "total_blocks": total,
+                "remaining_blocks": 0,
+            })
+
+        idx = len(local)
+        with urlopen(f"{POOL_API}/api/block/{idx}", timeout=2.0) as resp:
+            detail = json.loads(resp.read().decode())
+        if not detail.get("ok") or not isinstance(detail.get("block"), dict):
+            return jsonify({"ok": False, "error": f"failed to fetch block {idx}", "local_blocks": len(local), "total_blocks": total, "remaining_blocks": total - len(local)}), 502
+
+        local.append(detail["block"])
+        _save_local_chain(wallet, local)
+        _update_wallet_meta(wallet, local)
+
+        remaining = max(0, total - len(local))
+        return jsonify({
+            "ok": True,
+            "message": f"Downloaded block {idx + 1}/{total}",
+            "local_blocks": len(local),
+            "total_blocks": total,
+            "remaining_blocks": remaining,
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
 
 
 @app.get("/api/pubkey")
