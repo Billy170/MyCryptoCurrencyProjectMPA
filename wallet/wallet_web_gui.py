@@ -100,6 +100,14 @@ def _fetch_remote_chain_summaries() -> list:
     return blocks if isinstance(blocks, list) else []
 
 
+def _fetch_blocks_range(start: int, limit: int = 25) -> tuple[list, int]:
+    with urlopen(f"{POOL_API}/api/blocks?start={int(start)}&limit={int(limit)}", timeout=2.5) as resp:
+        payload = json.loads(resp.read().decode())
+    blocks = payload.get("blocks", []) if isinstance(payload, dict) else []
+    total = int(payload.get("total", 0) or 0) if isinstance(payload, dict) else 0
+    return (blocks if isinstance(blocks, list) else []), total
+
+
 def _update_wallet_meta(wallet_address: str, chain: list):
     wallet_blocks = _load_wallet_blocks()
     wallet_blocks[wallet_address] = {
@@ -307,14 +315,16 @@ WALLET_TPL = """
         updateProgress(downloaded, total);
         msg.textContent = `Need ${plan.missing_blocks || 0} missing blocks.`;
 
-        while ((plan.remaining_blocks || 0) > 0 || downloaded < total) {
+        let remaining = plan.remaining_blocks || 0;
+        while (remaining > 0 || downloaded < total) {
           const stepRes = await fetch('/api/wallet/sync_step', { method: 'POST' });
           const step = await stepRes.json();
           total = step.total_blocks || total;
           downloaded = step.local_blocks || downloaded;
           updateProgress(downloaded, total);
           msg.textContent = step.message || 'Syncing blocks...';
-          if (!step.ok || (step.remaining_blocks || 0) <= 0) break;
+          remaining = step.remaining_blocks || 0;
+          if (!step.ok || remaining <= 0) break;
         }
 
         document.getElementById('chainHeight').textContent = downloaded;
@@ -517,20 +527,20 @@ def wallet_sync_step_api():
                 "remaining_blocks": 0,
             })
 
-        idx = len(local)
-        with urlopen(f"{POOL_API}/api/block/{idx}", timeout=2.0) as resp:
-            detail = json.loads(resp.read().decode())
-        if not detail.get("ok") or not isinstance(detail.get("block"), dict):
-            return jsonify({"ok": False, "error": f"failed to fetch block {idx}", "local_blocks": len(local), "total_blocks": total, "remaining_blocks": total - len(local)}), 502
+        start = len(local)
+        fetched, range_total = _fetch_blocks_range(start=start, limit=25)
+        if not fetched:
+            return jsonify({"ok": False, "error": f"failed to fetch missing blocks from {start}", "local_blocks": len(local), "total_blocks": total, "remaining_blocks": total - len(local)}), 502
 
-        local.append(detail["block"])
+        local.extend([b for b in fetched if isinstance(b, dict)])
         _save_local_chain(wallet, local)
         _update_wallet_meta(wallet, local)
 
+        total = max(total, range_total)
         remaining = max(0, total - len(local))
         return jsonify({
             "ok": True,
-            "message": f"Downloaded block {idx + 1}/{total}",
+            "message": f"Downloaded {len(fetched)} block(s).",
             "local_blocks": len(local),
             "total_blocks": total,
             "remaining_blocks": remaining,
