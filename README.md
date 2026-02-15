@@ -25,6 +25,7 @@
 ## ✨ Features
 
 - 🖥️ **Central Web GUI** (`:8060`) for fast orchestration of all services.
+- 🪟 **Windows Desktop App** (`launcher/central_desktop_app.py`) to run the same control center in a native window (non-browser tab).
 - 👛 **Wallet Web GUI** (`:8070`) with register/login, Quick Send, and blockchain sync.
 - 🏊 **Pool Server** (TCP `:3333`, API `:3334`) for wallet, miner, and chain APIs.
 - 🧭 **Blockchain Map Explorer** (`:8050`) with auto update / chain download.
@@ -103,7 +104,16 @@ python launcher/central_web_gui.py
 Then open:
 - `http://127.0.0.1:8060`
 
-### Option B: One-click launcher
+### Option B: Windows desktop app (non-web tab)
+
+```bash
+python launcher/central_desktop_app.py
+```
+
+- On Windows 10/11 this opens the Control Center in a native desktop window using `pywebview`.
+- If `pywebview` is not installed, it falls back to your default browser and prints install guidance.
+
+### Option C: One-click launcher
 
 ```bash
 python launcher/mpa_launcher.py
@@ -141,6 +151,7 @@ The wallet calls the pool transfer endpoint and validates sender balance before 
 ```bash
 python -m py_compile \
   launcher/central_web_gui.py \
+  launcher/central_desktop_app.py \
   launcher/mpa_launcher.py \
   pool/mpa_pool_server.py \
   wallet/wallet_web_gui.py \
