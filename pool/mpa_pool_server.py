@@ -404,7 +404,8 @@ def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0, algo: str = "",
 
         registered_miners = sum(1 for m in miners.values() if m.get("registered"))
         network_difficulty = round(1 + (registered_miners * 0.536), 3)
-        bc.difficulty = max(1, int(round(network_difficulty)))
+        # Keep chain mining responsive for real-time pool/miner communication in this demo.
+        bc.difficulty = 1
 
         for m in miners.values():
             m["difficulty"] = network_difficulty

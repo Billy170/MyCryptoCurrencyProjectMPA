@@ -77,7 +77,7 @@ tpl = """
 <body>
   <div class="container">
     <h1>MPA Pool Dashboard</h1>
-    <p class="muted">Auto-refresh every 2s · <a href="/api/pool">JSON API</a></p>
+    <p class="muted">Auto-refresh every 5s · <a href="/api/pool">JSON API</a></p>
 
     <div class="card" style="margin-bottom:16px;">
       <strong>Pool API:</strong> {{ api_url }}<br/>
@@ -98,23 +98,27 @@ tpl = """
 
     <h3>Miners</h3>
     <table>
-      <thead><tr><th>Miner</th><th>Shares</th><th>Difficulty</th><th>Balance (MPA)</th></tr></thead>
+      <thead><tr><th>Miner</th><th>Wallet</th><th>Algo</th><th>Shares</th><th>Difficulty</th><th>Hashrate</th><th>Last PoW</th><th>Balance (MPA)</th></tr></thead>
       <tbody>
       {% for m, v in miners.items() %}
         <tr>
           <td>{{ m }}</td>
+          <td>{{ v.get('wallet', '') }}</td>
+          <td>{{ v.get('algo', 'MPAALG') }}</td>
           <td>{{ v.get('shares', 0) }}</td>
           <td>{{ v.get('difficulty', 1) }}</td>
-          <td>{{ '%.4f'|format(balances.get(m, 0)) }}</td>
+          <td>{{ v.get('hashrate', 0) }}</td>
+          <td>{{ v.get('last_pow', '') }}</td>
+          <td>{{ '%.4f'|format(v.get('wallet_balance', balances.get(v.get('wallet', ''), 0))) }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="muted">No connected miners yet.</td></tr>
+        <tr><td colspan="8" class="muted">No connected miners yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   <script>
-    setTimeout(() => window.location.reload(), 2000);
+    setTimeout(() => window.location.reload(), 5000);
   </script>
 </body>
 </html>

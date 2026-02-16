@@ -3,9 +3,9 @@ from typing import Tuple
 
 # MPAALG: memory-hard PoW inspired by RandomX ideas (scratchpad + data-dependent rounds).
 ALGORITHM_NAME = "MPAALG"
-SCRATCHPAD_KB = 256
+SCRATCHPAD_KB = 64
 SCRATCHPAD_SIZE = SCRATCHPAD_KB * 1024
-ROUNDS = 96
+ROUNDS = 24
 
 
 def _seed_bytes(header_hash: str, nonce: int) -> bytes:

@@ -124,7 +124,7 @@ TPL = """
 <body>
 <div class="container">
   <h1>MPA Blockchain Map</h1>
-  <div class="muted">Explorer auto download/update every 25 seconds.</div>
+  <div class="muted">Explorer auto download/update every 10 seconds.</div>
   <div class="row">
     {% for b in blocks %}
     <div class="block">
@@ -150,7 +150,7 @@ TPL = """
     {% if error %}<div style="color:#fca5a5">{{ error }}</div>{% endif %}
   </div>
 </div>
-<script>setTimeout(()=>window.location.reload(),25000);</script>
+<script>setTimeout(()=>window.location.reload(),10000);</script>
 </body>
 </html>
 """
