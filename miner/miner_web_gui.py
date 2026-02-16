@@ -13,6 +13,8 @@ if PROJECT_ROOT not in sys.path:
 
 from flask import Flask, jsonify, redirect, render_template_string, request, url_for
 
+from mpa_core.mpa_pow import ALGORITHM_NAME, mpaalg_hash
+
 APP_PORT = int(os.environ.get("MPA_MINER_PORT", "8090"))
 POOL_HOST = os.environ.get("MPA_POOL_HOST", "127.0.0.1")
 POOL_PORT = int(os.environ.get("MPA_POOL_PORT", "3333"))
@@ -42,7 +44,10 @@ state = {
     "last_seen_block": 0,
     "start_block": 0,
     "cpu_target": CPU_TARGET_PERCENT,
+    "algorithm": ALGORITHM_NAME,
+    "last_pow": "",
 }
+
 
 _lock = threading.Lock()
 _cpu_processes = []
@@ -170,8 +175,28 @@ def _bootstrap_saved_state():
             pass
 
 
-def _submit_share(wallet: str, hashrate: int) -> bool:
-    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate}
+
+
+def _run_mpaalg_round(workers: int, round_seconds: float = 0.18):
+    started = time.time()
+    attempts = 0
+    best_hash = "f" * 64
+    nonce = int(time.time() * 1000)
+    header = f"{MINER_ID}:{state.get('last_seen_block', 0)}:{started}"
+    while (time.time() - started) < round_seconds:
+        for _ in range(max(1, workers)):
+            h = mpaalg_hash(header, nonce)
+            if h < best_hash:
+                best_hash = h
+            attempts += 1
+            nonce += 1
+    elapsed = max(0.001, time.time() - started)
+    hps = int(attempts / elapsed)
+    return hps, best_hash[:24], nonce
+
+
+def _submit_share(wallet: str, hashrate: int, pow_nonce: int = 0, pow_hash: str = "") -> bool:
+    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate, "algo": ALGORITHM_NAME, "pow_nonce": int(pow_nonce), "pow_hash": pow_hash}
     with socket.create_connection((POOL_HOST, POOL_PORT), timeout=1.0) as s:
         s.send(json.dumps(msg).encode())
         resp = json.loads(s.recv(4096).decode())
@@ -185,8 +210,12 @@ def miner_loop():
                 break
             wallet = state["wallet"]
             workers = max(1, int(state["workers"]))
-            current_hashrate = workers * 100
+
+        current_hashrate, best_pow, nonce = _run_mpaalg_round(workers)
+
+        with _lock:
             state["hashrate"] = current_hashrate
+            state["last_pow"] = best_pow
 
         accepted = 0
         rejected = 0
@@ -195,7 +224,7 @@ def miner_loop():
                 if not state["running"]:
                     break
             try:
-                ok = _submit_share(wallet, current_hashrate)
+                ok = _submit_share(wallet, current_hashrate, pow_nonce=nonce, pow_hash=best_pow)
                 if ok:
                     accepted += 1
                 else:
@@ -279,6 +308,8 @@ TPL = """
       <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
       <strong>Miner ID:</strong> {{ miner_id }}<br/>
       <strong>Mode:</strong> {{ mode }} (Target CPU: {{ cpu_target }}%)<br/>
+      <strong>Algorithm:</strong> {{ algorithm }}<br/>
+      <strong>Best recent MPAALG hash:</strong> {{ last_pow }}<br/>
       <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
       <strong>Start from block:</strong> {{ start_block }}<br/>
       <strong>Last saved block:</strong> {{ last_seen_block }}

@@ -4,8 +4,10 @@ import time
 
 try:
     from .mpa_crypto import verify_transaction
+    from .mpa_pow import ALGORITHM_NAME, mine_nonce
 except ImportError:
     from mpa_crypto import verify_transaction
+    from mpa_pow import ALGORITHM_NAME, mine_nonce
 
 
 class Blockchain:
@@ -35,7 +37,20 @@ class Blockchain:
             layer = [self._sha256(layer[i] + layer[i + 1]) for i in range(0, len(layer), 2)]
         return layer[0]
 
+    def _pow_seed(self, block: dict) -> str:
+        header = {
+            "index": block["index"],
+            "timestamp": block["timestamp"],
+            "prev_hash": block["prev_hash"],
+            "merkle_root": block["merkle_root"],
+            "miner": block.get("miner", ""),
+            "difficulty": block["difficulty"],
+            "algo": ALGORITHM_NAME,
+        }
+        return self._sha256(json.dumps(header, sort_keys=True))
+
     def _block_header_hash(self, block: dict) -> str:
+        # Legacy helper kept for compatibility with older chain blocks.
         header = {
             "index": block["index"],
             "timestamp": block["timestamp"],
@@ -59,12 +74,16 @@ class Blockchain:
             "difficulty": self.difficulty,
             "miner": "GENESIS",
             "miner_address": "GENESIS",
+            "algo": ALGORITHM_NAME,
             "date": time.strftime("%Y-%m-%d", now),
             "hour": now.tm_hour,
             "minute": now.tm_min,
             "second": now.tm_sec,
         }
-        genesis["hash"] = self._block_header_hash(genesis)
+        seed = self._pow_seed(genesis)
+        nonce, pow_hash = mine_nonce(seed, difficulty=1, start_nonce=0)
+        genesis["nonce"] = nonce
+        genesis["hash"] = pow_hash
         self.chain.append(genesis)
 
     def add_signed_transaction(self, sender, receiver, amount, nonce, public_key, signature):
@@ -99,13 +118,11 @@ class Blockchain:
         }
         if isinstance(extra_data, dict):
             block.update(extra_data)
-        target_prefix = "0" * int(max(1, round(self.difficulty)))
-        while True:
-            block_hash = self._block_header_hash(block)
-            if block_hash.startswith(target_prefix):
-                block["hash"] = block_hash
-                break
-            block["nonce"] += 1
+        block["algo"] = ALGORITHM_NAME
+        seed = self._pow_seed(block)
+        nonce, pow_hash = mine_nonce(seed, int(max(1, round(self.difficulty))), start_nonce=0)
+        block["nonce"] = nonce
+        block["hash"] = pow_hash
 
         self.chain.append(block)
         self.pending_transactions = []

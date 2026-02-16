@@ -9,6 +9,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from mpa_core.mpa_blockchain import Blockchain
+from mpa_core.mpa_pow import ALGORITHM_NAME, mpaalg_hash
 
 try:
     from miner.gpu_check import check_gpu
@@ -20,6 +21,7 @@ running = False
 hashrate = 0
 shares = 0
 simulation_mode = False
+last_pow = ""
 
 
 def _resolve_mining_device():
@@ -31,7 +33,7 @@ def _resolve_mining_device():
 
 
 def miner_loop(log):
-    global running, hashrate, shares
+    global running, hashrate, shares, last_pow
     while running:
         time.sleep(0.2)
         if simulation_mode:
@@ -39,8 +41,10 @@ def miner_loop(log):
         else:
             hashrate = 120 + int(time.time()) % 30
         shares += 1
+        pow_hash = mpaalg_hash(f"gpu-miner:{shares}", shares)
+        last_pow = pow_hash[:22]
         mode = "SIM" if simulation_mode else "GPU"
-        log.insert(END, f"[{mode}] Mined share #{shares} | Hashrate {hashrate} MH/s\n")
+        log.insert(END, f"[{mode}/{ALGORITHM_NAME}] Share #{shares} | Hashrate {hashrate} MH/s | Hash {last_pow}\n")
         log.see(END)
 
 
@@ -76,10 +80,12 @@ def stop_mining(log=None):
 
 def run_gui():
     app = Tk()
-    app.title("MPA GPU Miner")
+    app.title("MPA GPU Miner - MPAALG")
 
     gpu_label = Label(app, text="GPU: checking...")
     gpu_label.pack()
+    algo_label = Label(app, text=f"Algorithm: {ALGORITHM_NAME}")
+    algo_label.pack()
 
     log = Text(app, height=15, width=70)
     log.pack()

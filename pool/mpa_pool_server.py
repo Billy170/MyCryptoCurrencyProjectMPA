@@ -384,11 +384,11 @@ def run_pool_api(host=API_HOST, port=API_PORT):
     api_app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
-def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
+def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0, algo: str = "", pow_hash: str = ""):
     with state_lock:
         is_new_miner = miner_id not in miners
         if is_new_miner:
-            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0, "registered": False}
+            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0, "registered": False, "algo": algo or "MPAALG", "last_pow": ""}
             _append_chain_tx(
                 {
                     "type": "miner_register",
@@ -412,6 +412,9 @@ def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0):
         miners[miner_id]["shares"] += 1
         miners[miner_id]["wallet"] = wallet
         miners[miner_id]["hashrate"] = int(hashrate)
+        miners[miner_id]["algo"] = str(algo or miners[miner_id].get("algo", "MPAALG"))
+        if pow_hash:
+            miners[miner_id]["last_pow"] = str(pow_hash)[:32]
 
         _append_chain_tx(
             {
@@ -441,7 +444,9 @@ def handle_client(conn, addr):
                 miner_id = str(msg.get("miner_id") or default_miner_id)
                 wallet = str(msg.get("wallet") or "UNKNOWN_WALLET")
                 hashrate = int(msg.get("hashrate", 0) or 0)
-                _apply_submit(miner_id, wallet, hashrate)
+                algo = str(msg.get("algo") or "MPAALG")
+                pow_hash = str(msg.get("pow_hash") or "")
+                _apply_submit(miner_id, wallet, hashrate, algo=algo, pow_hash=pow_hash)
                 conn.send(json.dumps({"result": "accepted", "wallet": wallet}).encode())
             else:
                 conn.send(json.dumps({"result": "ignored"}).encode())

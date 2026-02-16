@@ -30,6 +30,7 @@
 - 🏊 **Pool Server** (TCP `:3333`, API `:3334`) for wallet, miner, and chain APIs.
 - 🧭 **Blockchain Map Explorer** (`:8050`) with auto update / chain download.
 - ⛏️ **Miner Web GUIs** (`:8090+`) that submit shares to the pool.
+- 🧠 **MPAALG PoW** (RandomX-inspired memory-hard hashing) used by blockchain mining and miner clients.
 - 🔁 **Incremental sync** for wallet/explorer (downloads only missing blocks).
 
 ---
