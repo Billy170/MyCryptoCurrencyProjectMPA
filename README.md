@@ -111,6 +111,7 @@ python launcher/central_desktop_app.py
 ```
 
 - On Windows 10/11 this opens a standalone native desktop control app built with Tkinter.
+- The desktop app includes integrated tabs (services, wallet, blockchain, miners) so you control and monitor everything inside the app window.
 - You can package it to `.exe` with `launcher/build_desktop_app_exe.bat`.
 
 ### Option C: One-click launcher
