@@ -25,7 +25,7 @@
 ## ✨ Features
 
 - 🖥️ **Central Web GUI** (`:8060`) for fast orchestration of all services.
-- 🪟 **Windows Desktop App** (`launcher/central_desktop_app.py`) to run the same control center in a native window (non-browser tab).
+- 🪟 **Windows Desktop App** (`launcher/central_desktop_app.py`) as a standalone native desktop program (no browser tab required).
 - 👛 **Wallet Web GUI** (`:8070`) with register/login, Quick Send, and blockchain sync.
 - 🏊 **Pool Server** (TCP `:3333`, API `:3334`) for wallet, miner, and chain APIs.
 - 🧭 **Blockchain Map Explorer** (`:8050`) with auto update / chain download.
@@ -110,14 +110,23 @@ Then open:
 python launcher/central_desktop_app.py
 ```
 
-- On Windows 10/11 this opens the Control Center in a native desktop window using `pywebview`.
-- If `pywebview` is not installed, it falls back to your default browser and prints install guidance.
+- On Windows 10/11 this opens a standalone native desktop control app built with Tkinter.
+- You can package it to `.exe` with `launcher/build_desktop_app_exe.bat`.
 
 ### Option C: One-click launcher
 
 ```bash
 python launcher/mpa_launcher.py
 ```
+
+
+### Option D: Build standalone `.exe` (Windows)
+
+```bat
+launcher\build_desktop_app_exe.bat
+```
+
+This creates `dist/MPA-Desktop-Control-Center.exe` so you can run it as a separate Windows program.
 
 ---
 
