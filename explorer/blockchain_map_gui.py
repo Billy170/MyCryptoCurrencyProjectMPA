@@ -33,14 +33,14 @@ def _save_cached_chain(chain: list):
 
 
 def _fetch_chain_summaries() -> list:
-    with urlopen(f"{POOL_API_BASE}/api/chain", timeout=1.8) as resp:
+    with urlopen(f"{POOL_API_BASE}/api/chain", timeout=4.0) as resp:
         data = json.loads(resp.read().decode())
     blocks = data.get("blocks", [])
     return blocks if isinstance(blocks, list) else []
 
 
 def _fetch_blocks_range(start: int, limit: int = 100) -> list:
-    with urlopen(f"{POOL_API_BASE}/api/blocks?start={int(start)}&limit={int(limit)}", timeout=2.5) as resp:
+    with urlopen(f"{POOL_API_BASE}/api/blocks?start={int(start)}&limit={int(limit)}", timeout=5.0) as resp:
         data = json.loads(resp.read().decode())
     blocks = data.get("blocks", []) if isinstance(data, dict) else []
     return blocks if isinstance(blocks, list) else []
@@ -54,7 +54,7 @@ def send_sync(block_height: int):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=1.2):
+    with urlopen(req, timeout=4.0):
         pass
 
 

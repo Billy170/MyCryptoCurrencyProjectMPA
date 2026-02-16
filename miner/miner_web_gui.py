@@ -197,8 +197,9 @@ def _run_mpaalg_round(workers: int, round_seconds: float = 0.18):
 
 def _submit_share(wallet: str, hashrate: int, pow_nonce: int = 0, pow_hash: str = "") -> bool:
     msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate, "algo": ALGORITHM_NAME, "pow_nonce": int(pow_nonce), "pow_hash": pow_hash}
-    with socket.create_connection((POOL_HOST, POOL_PORT), timeout=1.0) as s:
+    with socket.create_connection((POOL_HOST, POOL_PORT), timeout=6.0) as s:
         s.send(json.dumps(msg).encode())
+        s.settimeout(8.0)
         resp = json.loads(s.recv(4096).decode())
     return resp.get("result") == "accepted"
 

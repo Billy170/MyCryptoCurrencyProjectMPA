@@ -29,7 +29,7 @@ def _api_post(path: str, payload: dict):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=2) as resp:
+    with urlopen(req, timeout=6) as resp:
         return json.loads(resp.read().decode()), resp.getcode()
 
 
@@ -41,13 +41,13 @@ def _sync_network(role: str, node_id: str, last_block: int):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=1.5):
+    with urlopen(req, timeout=4):
         pass
 
 
 def get_wallet_balance(address: str) -> float:
     try:
-        with urlopen(f"{POOL_API}/api/wallet/{address}", timeout=1.2) as resp:
+        with urlopen(f"{POOL_API}/api/wallet/{address}", timeout=4.0) as resp:
             data = json.loads(resp.read().decode())
         return float(data.get("balance", 0.0))
     except Exception:
@@ -94,14 +94,14 @@ def _save_local_chain(wallet_address: str, chain: list):
 
 
 def _fetch_remote_chain_summaries() -> list:
-    with urlopen(f"{POOL_API}/api/chain", timeout=2.0) as resp:
+    with urlopen(f"{POOL_API}/api/chain", timeout=4.0) as resp:
         chain_data = json.loads(resp.read().decode())
     blocks = chain_data.get("blocks", [])
     return blocks if isinstance(blocks, list) else []
 
 
 def _fetch_blocks_range(start: int, limit: int = 25) -> tuple[list, int]:
-    with urlopen(f"{POOL_API}/api/blocks?start={int(start)}&limit={int(limit)}", timeout=2.5) as resp:
+    with urlopen(f"{POOL_API}/api/blocks?start={int(start)}&limit={int(limit)}", timeout=5.0) as resp:
         payload = json.loads(resp.read().decode())
     blocks = payload.get("blocks", []) if isinstance(payload, dict) else []
     total = int(payload.get("total", 0) or 0) if isinstance(payload, dict) else 0

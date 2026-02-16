@@ -23,12 +23,12 @@ def send_sync(last_block: int):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=1.2):
+    with urlopen(req, timeout=4.0):
         pass
 
 def fetch_pool_stats():
     try:
-        with urlopen(POOL_API_URL, timeout=1.2) as resp:
+        with urlopen(POOL_API_URL, timeout=4.0) as resp:
             data = json.loads(resp.read().decode())
         data["online"] = True
         try:
