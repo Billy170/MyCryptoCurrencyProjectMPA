@@ -384,11 +384,11 @@ def run_pool_api(host=API_HOST, port=API_PORT):
     api_app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
-def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0, algo: str = "", pow_hash: str = ""):
+def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0, algo: str = "", pow_hash: str = "", cpu_load: float = 0.0, cpu_temp: str = "N/A"):
     with state_lock:
         is_new_miner = miner_id not in miners
         if is_new_miner:
-            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0, "registered": False, "algo": algo or "MPAALG", "last_pow": ""}
+            miners[miner_id] = {"shares": 0, "difficulty": 1.0, "wallet": wallet, "hashrate": 0, "registered": False, "algo": algo or "MPAALG", "last_pow": "", "cpu_load": 0.0, "cpu_temp": "N/A"}
             _append_chain_tx(
                 {
                     "type": "miner_register",
@@ -416,6 +416,8 @@ def _apply_submit(miner_id: str, wallet: str, hashrate: int = 0, algo: str = "",
         miners[miner_id]["algo"] = str(algo or miners[miner_id].get("algo", "MPAALG"))
         if pow_hash:
             miners[miner_id]["last_pow"] = str(pow_hash)[:32]
+        miners[miner_id]["cpu_load"] = float(cpu_load or 0.0)
+        miners[miner_id]["cpu_temp"] = str(cpu_temp or "N/A")[:16]
 
         _append_chain_tx(
             {
@@ -447,7 +449,9 @@ def handle_client(conn, addr):
                 hashrate = int(msg.get("hashrate", 0) or 0)
                 algo = str(msg.get("algo") or "MPAALG")
                 pow_hash = str(msg.get("pow_hash") or "")
-                _apply_submit(miner_id, wallet, hashrate, algo=algo, pow_hash=pow_hash)
+                cpu_load = float(msg.get("cpu_load", 0.0) or 0.0)
+                cpu_temp = str(msg.get("cpu_temp") or "N/A")
+                _apply_submit(miner_id, wallet, hashrate, algo=algo, pow_hash=pow_hash, cpu_load=cpu_load, cpu_temp=cpu_temp)
                 conn.send(json.dumps({"result": "accepted", "wallet": wallet}).encode())
             else:
                 conn.send(json.dumps({"result": "ignored"}).encode())

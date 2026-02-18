@@ -7,6 +7,11 @@ import threading
 import time
 from urllib.request import Request, urlopen
 
+try:
+    import psutil
+except Exception:
+    psutil = None
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -46,7 +51,10 @@ state = {
     "cpu_target": CPU_TARGET_PERCENT,
     "algorithm": ALGORITHM_NAME,
     "last_pow": "",
+    "cpu_load": 0.0,
+    "cpu_temp": "N/A",
 }
+
 
 
 _lock = threading.Lock()
@@ -176,6 +184,43 @@ def _bootstrap_saved_state():
 
 
 
+def _read_cpu_load() -> float:
+    try:
+        if psutil is not None:
+            return float(psutil.cpu_percent(interval=0.0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _read_cpu_temp() -> str:
+    try:
+        if psutil is not None and hasattr(psutil, "sensors_temperatures"):
+            temps = psutil.sensors_temperatures() or {}
+            for entries in temps.values():
+                if entries:
+                    val = getattr(entries[0], "current", None)
+                    if val is not None:
+                        return f"{float(val):.1f}°C"
+    except Exception:
+        pass
+    for path in [
+        "/sys/class/thermal/thermal_zone0/temp",
+        "/sys/class/hwmon/hwmon0/temp1_input",
+    ]:
+        try:
+            raw = open(path, "r", encoding="utf-8").read().strip()
+            temp = float(raw)
+            if temp > 1000:
+                temp = temp / 1000.0
+            return f"{temp:.1f}°C"
+        except Exception:
+            continue
+    return "N/A"
+
+
+
+
 
 def _run_mpaalg_round(workers: int, round_seconds: float = 0.18):
     started = time.time()
@@ -195,8 +240,8 @@ def _run_mpaalg_round(workers: int, round_seconds: float = 0.18):
     return hps, best_hash[:24], nonce
 
 
-def _submit_share(wallet: str, hashrate: int, pow_nonce: int = 0, pow_hash: str = "") -> bool:
-    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate, "algo": ALGORITHM_NAME, "pow_nonce": int(pow_nonce), "pow_hash": pow_hash}
+def _submit_share(wallet: str, hashrate: int, pow_nonce: int = 0, pow_hash: str = "", cpu_load: float = 0.0, cpu_temp: str = "N/A") -> bool:
+    msg = {"method": "submit", "miner_id": MINER_ID, "wallet": wallet, "hashrate": hashrate, "algo": ALGORITHM_NAME, "pow_nonce": int(pow_nonce), "pow_hash": pow_hash, "cpu_load": float(cpu_load), "cpu_temp": str(cpu_temp)}
     with socket.create_connection((POOL_HOST, POOL_PORT), timeout=6.0) as s:
         s.send(json.dumps(msg).encode())
         s.settimeout(8.0)
@@ -214,9 +259,14 @@ def miner_loop():
 
         current_hashrate, best_pow, nonce = _run_mpaalg_round(workers)
 
+        cpu_load = _read_cpu_load()
+        cpu_temp = _read_cpu_temp()
+
         with _lock:
             state["hashrate"] = current_hashrate
             state["last_pow"] = best_pow
+            state["cpu_load"] = cpu_load
+            state["cpu_temp"] = cpu_temp
 
         accepted = 0
         rejected = 0
@@ -225,7 +275,7 @@ def miner_loop():
                 if not state["running"]:
                     break
             try:
-                ok = _submit_share(wallet, current_hashrate, pow_nonce=nonce, pow_hash=best_pow)
+                ok = _submit_share(wallet, current_hashrate, pow_nonce=nonce, pow_hash=best_pow, cpu_load=cpu_load, cpu_temp=cpu_temp)
                 if ok:
                     accepted += 1
                 else:
@@ -311,6 +361,7 @@ TPL = """
       <strong>Mode:</strong> {{ mode }} (Target CPU: {{ cpu_target }}%)<br/>
       <strong>Algorithm:</strong> {{ algorithm }}<br/>
       <strong>Best recent MPAALG hash:</strong> {{ last_pow }}<br/>
+      <strong>CPU load:</strong> {{ "%.1f"|format(cpu_load|float) }}% · <strong>CPU temp:</strong> {{ cpu_temp }}<br/>
       <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
       <strong>Start from block:</strong> {{ start_block }}<br/>
       <strong>Last saved block:</strong> {{ last_seen_block }}
@@ -323,6 +374,8 @@ TPL = """
       <div class="metric"><div class="k">Shares</div><div class="v">{{ shares }}</div></div>
       <div class="metric"><div class="k">Accepted</div><div class="v">{{ accepted }}</div></div>
       <div class="metric"><div class="k">Rejected</div><div class="v">{{ rejected }}</div></div>
+      <div class="metric"><div class="k">CPU Load</div><div class="v">{{ "%.1f"|format(cpu_load|float) }}%</div></div>
+      <div class="metric"><div class="k">CPU Temp</div><div class="v">{{ cpu_temp }}</div></div>
     </div>
 
     <div class="panel">

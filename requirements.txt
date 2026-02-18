@@ -6,3 +6,4 @@ torch==2.2.0
 cupy-cuda12x==13.2.0
 requests==2.32.1
 numpy==1.26.4
+psutil==5.9.8

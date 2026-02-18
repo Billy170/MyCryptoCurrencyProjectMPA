@@ -184,11 +184,13 @@ class MPADesktopApp:
         actions.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(actions, text="Start Configured Miners", command=lambda: self._bg(self._start_miners)).pack(side=tk.LEFT)
 
-        self.miner_table = ttk.Treeview(self.tab_miners, columns=("id", "wallet", "shares", "difficulty", "hashrate"), show="headings", height=20)
+        self.miner_table = ttk.Treeview(self.tab_miners, columns=("id", "wallet", "cpu_load", "cpu_temp", "shares", "difficulty", "hashrate"), show="headings", height=20)
         for col, title, width in [
             ("id", "Miner ID", 220),
-            ("wallet", "Wallet", 260),
-            ("shares", "Shares", 100),
+            ("wallet", "Wallet", 240),
+            ("cpu_load", "CPU Load", 100),
+            ("cpu_temp", "CPU Temp", 100),
+            ("shares", "Shares", 90),
             ("difficulty", "Difficulty", 100),
             ("hashrate", "Hashrate", 120),
         ]:
@@ -307,6 +309,8 @@ class MPADesktopApp:
                 values=(
                     miner_id,
                     info.get("wallet", ""),
+                    f"{float(info.get('cpu_load', 0.0)):.1f}%",
+                    info.get("cpu_temp", "N/A"),
                     info.get("shares", 0),
                     info.get("difficulty", 0),
                     info.get("hashrate", 0),
