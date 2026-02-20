@@ -54,9 +54,21 @@ class MPADesktopApp:
         if "clam" in style.theme_names():
             style.theme_use("clam")
 
-        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"))
-        style.configure("Section.TLabelframe.Label", font=("Segoe UI", 11, "bold"))
-        style.configure("State.TLabel", font=("Segoe UI", 10, "bold"))
+        self.root.configure(bg="#0b1120")
+        style.configure("TFrame", background="#0b1120")
+        style.configure("TNotebook", background="#0b1120", borderwidth=0)
+        style.configure("TNotebook.Tab", background="#1f2937", foreground="#d1d5db", padding=(12, 8))
+        style.map("TNotebook.Tab", background=[("selected", "#f7931a")], foreground=[("selected", "#0f172a")])
+        style.configure("TLabelframe", background="#111827", foreground="#e5e7eb", bordercolor="#374151")
+        style.configure("TLabelframe.Label", background="#111827", foreground="#f3f4f6")
+        style.configure("TLabel", background="#0b1120", foreground="#e5e7eb")
+        style.configure("TButton", background="#1f2937", foreground="#f9fafb", padding=6)
+        style.map("TButton", background=[("active", "#374151")])
+        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"), foreground="#f8fafc", background="#0b1120")
+        style.configure("Section.TLabelframe.Label", font=("Segoe UI", 11, "bold"), foreground="#f9fafb")
+        style.configure("State.TLabel", font=("Segoe UI", 10, "bold"), foreground="#f59e0b", background="#0b1120")
+        style.configure("Treeview", background="#0f172a", fieldbackground="#0f172a", foreground="#e5e7eb", rowheight=24)
+        style.configure("Treeview.Heading", background="#1f2937", foreground="#f9fafb")
 
     def _build_ui(self):
         main = ttk.Frame(self.root, padding=14)
@@ -64,7 +76,7 @@ class MPADesktopApp:
 
         top = ttk.Frame(main)
         top.pack(fill=tk.X)
-        ttk.Label(top, text="MPA Desktop Control Center", style="Title.TLabel").pack(side=tk.LEFT)
+        ttk.Label(top, text="MPA Desktop Control Center • NiceHash Style", style="Title.TLabel").pack(side=tk.LEFT)
         ttk.Button(top, text="Refresh Now", command=self._refresh_all).pack(side=tk.RIGHT)
 
         quick = ttk.LabelFrame(main, text="Quick Actions", padding=10, style="Section.TLabelframe")

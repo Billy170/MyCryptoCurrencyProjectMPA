@@ -323,49 +323,71 @@ TPL = """
   <meta charset="utf-8" />
   <title>MPA Miner Web GUI</title>
   <style>
-    body { font-family: Arial, sans-serif; background:#0b1020; color:#e5e7eb; margin:0; }
-    .container { max-width: 860px; margin: 0 auto; padding: 20px; }
-    .panel { background:#111827; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-    .ok { color:#34d399; }
-    .stop { color:#f87171; }
+    :root { --bg:#0a0f1c; --panel:#111827; --panel-2:#0f172a; --accent:#f7931a; --text:#e5e7eb; --muted:#93a4bf; }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, Segoe UI, Arial, sans-serif; background: radial-gradient(circle at 10% 10%, #1a2440 0, var(--bg) 45%); color:var(--text); margin:0; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero { display:flex; justify-content:space-between; align-items:center; background:linear-gradient(135deg,#111827,#1f2937); border:1px solid #263044; border-radius:16px; padding:16px 18px; margin-bottom:14px; }
+    .hero h1 { margin:0; font-size:24px; }
+    .tag { background:rgba(247,147,26,.15); color:#ffbf6d; border:1px solid rgba(247,147,26,.4); border-radius:999px; padding:6px 12px; font-size:12px; font-weight:700; letter-spacing:.4px; }
+    .grid { display:grid; grid-template-columns: 1.2fr 1.8fr; gap:14px; margin-bottom:14px; }
+    .panel { background:linear-gradient(165deg,var(--panel),var(--panel-2)); border:1px solid #263044; border-radius:14px; padding:16px; }
+    .ok { color:#34d399; font-weight:700; }
+    .stop { color:#f87171; font-weight:700; }
+    .muted { color:var(--muted); }
     .err { color:#fca5a5; margin-top: 8px; }
-    .row { display:flex; gap:14px; flex-wrap: wrap; }
-    .metric { background:#1f2937; border-radius:10px; padding:12px; min-width: 160px; }
-    .metric .k { color:#93c5fd; font-size: 13px; }
-    .metric .v { font-size: 24px; font-weight: bold; }
-    input { width:100%; padding:10px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; }
-    button { border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:8px; }
-    .start { background:#10b981; color:white; }
-    .stopbtn { background:#ef4444; color:white; }
-    .save { background:#2563eb; color:white; }
-    a { color:#93c5fd; }
+    .row { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:12px; }
+    .metric { background:#121b2f; border:1px solid #273149; border-radius:12px; padding:12px; }
+    .metric .k { color:#8fa2c6; font-size: 12px; text-transform: uppercase; letter-spacing:.4px; }
+    .metric .v { font-size: 22px; font-weight: 700; margin-top:4px; }
+    input { width:100%; padding:10px; border-radius:10px; border:1px solid #374151; background:#0a1222; color:#e2e8f0; margin-top:6px; }
+    button { border:0; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; margin-top:8px; }
+    .start { background:linear-gradient(135deg,#f59e0b,#f97316); color:white; }
+    .stopbtn { background:linear-gradient(135deg,#ef4444,#b91c1c); color:white; }
+    .save { background:linear-gradient(135deg,#2563eb,#1d4ed8); color:white; }
+    a { color:#93c5fd; text-decoration:none; }
+    .actions { margin-top:12px; display:flex; gap:10px; }
+    @media (max-width: 980px) { .grid{grid-template-columns:1fr;} .row{grid-template-columns:repeat(2,minmax(130px,1fr));} }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>MPA Miner Web GUI (CPU ONLY)</h1>
-    <p><a href="/api/miner">JSON API</a></p>
-
-    <div class="panel">
-      <form method="post" action="/set_wallet">
-        <strong>Wallet address for rewards:</strong>
-        <input name="wallet" value="{{ wallet }}" />
-        <button class="save" type="submit">Save wallet</button>
-      </form>
+    <div class="hero">
+      <h1>MPA Miner — NiceHash Style Dashboard</h1>
+      <div>
+        <span class="tag">{{ algorithm }}</span>
+        <a href="/api/miner" style="margin-left:10px">JSON API</a>
+      </div>
     </div>
 
-    <div class="panel">
-      <strong>Status:</strong>
-      <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
-      <strong>Miner ID:</strong> {{ miner_id }}<br/>
-      <strong>Mode:</strong> {{ mode }} (Target CPU: {{ cpu_target }}%)<br/>
-      <strong>Algorithm:</strong> {{ algorithm }}<br/>
-      <strong>Best recent MPAALG hash:</strong> {{ last_pow }}<br/>
-      <strong>CPU load:</strong> {{ "%.1f"|format(cpu_load|float) }}% · <strong>CPU temp:</strong> {{ cpu_temp }}<br/>
-      <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
-      <strong>Start from block:</strong> {{ start_block }}<br/>
-      <strong>Last saved block:</strong> {{ last_seen_block }}
-      {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <div class="grid">
+      <div class="panel">
+        <form method="post" action="/set_wallet">
+          <strong>Wallet address for rewards</strong>
+          <input name="wallet" value="{{ wallet }}" />
+          <button class="save" type="submit">Save wallet</button>
+        </form>
+        <div class="actions">
+          <form method="post" action="/start" style="display:inline-block">
+            <button class="start" type="submit">Start Mining</button>
+          </form>
+          <form method="post" action="/stop" style="display:inline-block">
+            <button class="stopbtn" type="submit">Stop Mining</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <strong>Status:</strong>
+        <span class="{{ 'ok' if running else 'stop' }}">{{ 'RUNNING' if running else 'STOPPED' }}</span><br/>
+        <strong>Miner ID:</strong> <span class="muted">{{ miner_id }}</span><br/>
+        <strong>Mode:</strong> {{ mode }} (Target CPU: {{ cpu_target }}%)<br/>
+        <strong>Best recent MPAALG hash:</strong> <span class="muted">{{ last_pow }}</span><br/>
+        <strong>CPU load:</strong> {{ "%.1f"|format(cpu_load|float) }}% · <strong>CPU temp:</strong> {{ cpu_temp }}<br/>
+        <strong>Pool:</strong> {{ pool_host }}:{{ pool_port }}<br/>
+        <strong>Sync:</strong> Start block {{ start_block }} · Last block {{ last_seen_block }}
+        {% if error %}<div class="err">{{ error }}</div>{% endif %}
+      </div>
     </div>
 
     <div class="row">
@@ -376,15 +398,6 @@ TPL = """
       <div class="metric"><div class="k">Rejected</div><div class="v">{{ rejected }}</div></div>
       <div class="metric"><div class="k">CPU Load</div><div class="v">{{ "%.1f"|format(cpu_load|float) }}%</div></div>
       <div class="metric"><div class="k">CPU Temp</div><div class="v">{{ cpu_temp }}</div></div>
-    </div>
-
-    <div class="panel">
-      <form method="post" action="/start" style="display:inline-block">
-        <button class="start" type="submit">Start mining</button>
-      </form>
-      <form method="post" action="/stop" style="display:inline-block">
-        <button class="stopbtn" type="submit">Stop mining</button>
-      </form>
     </div>
   </div>
   <script>
