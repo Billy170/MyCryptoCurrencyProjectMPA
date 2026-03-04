@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import socket
 import sys
@@ -297,7 +298,7 @@ def transfer_simple_api():
     except Exception:
         return jsonify({"ok": False, "error": "invalid amount"}), 400
 
-    if amount <= 0:
+    if not math.isfinite(amount) or amount <= 0:
         return jsonify({"ok": False, "error": "amount must be > 0"}), 400
 
     with state_lock:
@@ -330,7 +331,7 @@ def transfer_wallet_api():
     except Exception:
         return jsonify({"ok": False, "error": "invalid amount"}), 400
 
-    if amount <= 0:
+    if not math.isfinite(amount) or amount <= 0:
         return jsonify({"ok": False, "error": "amount must be > 0"}), 400
 
     with state_lock:

@@ -8,7 +8,7 @@ if PROJECT_ROOT not in sys.path:
 from flask import Flask
 
 from mpa_core.mpa_blockchain import Blockchain
-from pool.mpa_pool_server import balances, miners
+from pool.mpa_pool_server import miners, wallet_balances
 
 app = Flask(__name__)
 bc = Blockchain()
@@ -31,7 +31,7 @@ def admin():
         "blocks": len(bc.chain),
         "difficulty": bc.difficulty,
         "miners": list(miners),
-        "balances": balances,
+        "balances": wallet_balances,
         "hashrate": total_hashrate(),
         "shares": total_shares(),
     }
