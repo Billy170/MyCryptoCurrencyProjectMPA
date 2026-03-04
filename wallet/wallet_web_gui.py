@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import sys
@@ -162,6 +163,8 @@ def build_tx(sender_value: str, receiver_value: str, amount_raw: str, nonce_valu
         amount_value = float(amount_raw)
     except ValueError as exc:
         raise ValueError(f"invalid amount '{amount_raw}'. Enter a number") from exc
+    if not math.isfinite(amount_value) or amount_value <= 0:
+        raise ValueError("amount must be a finite number greater than 0")
 
     return {
         "sender": sender_value,

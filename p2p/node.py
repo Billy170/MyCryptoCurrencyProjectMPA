@@ -1,12 +1,23 @@
 import os
 import sys
+from pathlib import Path
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+
+# Make imports resilient when running from IDEs with custom working directories.
+THIS_FILE = Path(__file__).resolve()
+PROJECT_ROOT = THIS_FILE.parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from flask import Flask, jsonify, request
-from mpa_core.live_chain import get_live_chain, write_chain
+
+try:
+    from mpa_core.live_chain import get_live_chain, write_chain
+except ModuleNotFoundError:  # pragma: no cover - fallback for non-standard IDE path setups
+    fallback_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if fallback_root not in sys.path:
+        sys.path.insert(0, fallback_root)
+    from mpa_core.live_chain import get_live_chain, write_chain
 
 app = Flask(__name__)
 peers = set()
